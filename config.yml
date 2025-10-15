@@ -1,0 +1,52 @@
+# Core configuration for SilkC system
+# DO NOT CHANGE THIS
+name: SilkCore
+version: 1.0-indev
+config_version: 1.0-indev
+
+# System-wide settings
+environment:
+  log_level: INFO
+  # Options for log level:
+  # INFO displays only important messages and user friendly information such has fatal errors and steps to solve
+  # DEBUG displays all messages including debug information useful for developers
+  # VERBOSE displays all messages including debug information and detailed operational information
+  env_file: ".env"
+
+# Plugin management
+plugins:
+  directory: "plugins/"
+  auto_load: true
+  hot_reload: true
+  enable_dependency_check: true
+  default_permissions: true
+  enable_community_plugins: false # Set to true to allow non signed plugins to be loaded
+
+# Event system
+events:
+  enabled: true
+  async: true
+  priority_levels:
+    - LOWEST
+    - LOW
+    - NORMAL
+    - HIGH
+    - MONITOR
+
+# Permissions system
+permissions:
+  enabled: true
+  default_role: user
+
+# Plugin communication and messaging
+communication:
+  enabled: true
+  messaging_system: "internal"
+  shared_data: true
+
+security:
+  sandbox_plugins: true
+  api_access_controls: true
+  max_memory: 256 # Maximum amount of ram each plugin can use in MB,
+  #                 Useful for limiting memory usage of untrusted plugins
+  max_total_memory: 512 # Maximum amount of ram Silk can use in MB.
