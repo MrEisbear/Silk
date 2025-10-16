@@ -11,6 +11,7 @@ environment:
   # INFO displays only important messages and user friendly information such has fatal errors and steps to solve
   # DEBUG displays all messages including debug information useful for developers
   # VERBOSE displays all messages including debug information and detailed operational information
+  # QUIET is perfect for prod and shows nothing except fatal errors
   env_file: ".env"
 
 # Plugin management

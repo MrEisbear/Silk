@@ -21,18 +21,10 @@ except ModuleNotFoundError:
     logger.error("Config module not found!")
     logger.info("Using default Values...")
 
+# Try to set logger level based on config, if no config default to info
 if config:
     level = config.get("environment", "log_level")
-    print(level)
     logger.set_mode(level)
-
-# Testing
-
-
-logger.debug("Testing Debug...")
-logger.verbose("Testing Verbose...")
-logger.info("Testing Info...")
-logger.warning("Testing Warning...")
-logger.error("Testing Error...")
-logger.fatal("Testing Fatal...")
-exit()
+else:
+    logger.set_mode("INFO")
+logger.info(f"Logger Level Set to {logger.mode}")

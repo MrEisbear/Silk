@@ -64,14 +64,17 @@ class Logger:
         match mode:
             case "DEBUG":
                 self.verbose = lambda message: None
+                self.mode = "DEBUG"
             case "QUIET": # deactivates everything except error and fatal
                 self.info = lambda message: None
                 self.warning = lambda message: None
                 self.debug = lambda message: None
                 self.verbose = lambda message: None
+                self.mode = "QUIET"
             case "VERBOSE":
-                pass # as it shows everything
+                self.mode = "VERBOSE" # dont deactivate anything as it shows everything
             case _: # aka INFO / default:
                 self.debug = lambda message: None
                 self.verbose = lambda message: None
+                self.mode = "INFO"
 
