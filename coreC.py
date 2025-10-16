@@ -6,5 +6,10 @@ class Configure:
         with open(path, "r") as f:
             self.data = self.yaml.load(f)
 
-    def get(self, key, default=None):
-        return self.data.get(key, default)
+    def get(self, *keys, default=None):
+        value = self.data
+        for key in keys:
+            value = value.get(key)
+            if value is None:
+                return default
+        return value

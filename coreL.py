@@ -45,7 +45,7 @@ class Logger:
         if self.module:
             print(self.Fore.BLUE + f"[DEBUG] [{self.name}] {message}" + self.Style.RESET_ALL)
         else:    
-            print(f"\034[37m[DEBUG] [{self.name}] {message}\033[0m")
+            print(f"\033[34m[DEBUG] [{self.name}] {message}\033[0m")
 
     def verbose(self, message):
         if self.module:
@@ -58,3 +58,20 @@ class Logger:
             print(self.Fore.RED + self.Style.BRIGHT + f"[FATAL] [{self.name}] {message}" + self.Style.RESET_ALL)
         else:
             print(f"\033[1;31m[FATAL] [{self.name}] {message}\033[0m")
+
+    def set_mode(self, mode):
+        mode = mode.upper()
+        match mode:
+            case "DEBUG":
+                self.verbose = lambda message: None
+            case "QUIET": # deactivates everything except error and fatal
+                self.info = lambda message: None
+                self.warning = lambda message: None
+                self.debug = lambda message: None
+                self.verbose = lambda message: None
+            case "VERBOSE":
+                pass # as it shows everything
+            case _: # aka INFO / default:
+                self.debug = lambda message: None
+                self.verbose = lambda message: None
+
