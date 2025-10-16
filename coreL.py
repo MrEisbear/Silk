@@ -1,4 +1,5 @@
-version = 0.1
+__part__ = "Silk Logger"
+__version__ = "1.0.0"
 
 class Logger:
     def __init__(self, name):
@@ -18,7 +19,7 @@ class Logger:
         self.reset() # Resets the terminal colours to ensure everything is in correct colour
 
     def version(self):
-        return version
+        return __version__
 
     def reset(self):
         if self.module:
