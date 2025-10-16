@@ -1,14 +1,20 @@
-import yaml
+# Startup Logger
+try:
+    from coreL import Logger
+except ModuleNotFoundError:
+    print("\033[1;31m[FATAL] [Core] Logger module not found!\033[0m")
+    exit()
+logger = Logger("Core")
+logger.info("Logger Started!")
 
-class CoreConfig:
-    def __init__(self, path):
-        with open(path, "r") as f:
-            self.data = yaml.safe_load(f)
+logger_ver = float(logger.version()) #Checks 
+if logger_ver < 0.1:
+    logger.warning("Old Logger Version detected!")
 
-    def get(self, *keys, default=None):
-        section = self.data
-        for key in keys:
-            if not isinstance(section, dict):
-                return default
-            section = section.get(key, default)
-        return section
+#
+try:
+    from coreC import Configure
+except ModuleNotFoundError:
+    logger.error("Config module not found!")
+    logger.info("Using default Values...")
+
