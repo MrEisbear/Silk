@@ -14,7 +14,7 @@ import importlib.util
 import os
 import sys
 import traceback
-import ruamel.yaml as yaml
+from ruamel.yaml import YAML
 from dotenv import load_dotenv
 from packaging import version  # for version comparison
 
@@ -29,8 +29,9 @@ load_dotenv()  # loads .env into os.environ
 def load_config(path="config.yml"):
     if not os.path.isfile(path):
         return {}
+    yaml_parser = YAML(typ="safe", pure=True)  # safe loader
     with open(path, "r") as f:
-        return yaml.safe_load(f) or {}
+        return yaml_parser.load(f) or {}
 
 # ----------------------------
 # Import helpers
