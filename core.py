@@ -1,46 +1,14 @@
-# Startup Logger
-try:
-    from coreL import Logger
-except ModuleNotFoundError:
-    print("\033[1;31m[FATAL] [Core] Logger module not found!\033[0m")
-    exit(1)
-logger = Logger("Core")
-logger.info("Logger Started!")
+from coreLoader import load_all_from, create_context
 
-# Check Version of Logger
-try:
-    from coreQ import Version
-    try:
-        if not Version.check_ver(logger.version(), "1.0.0"):
-            logger.warning("Old logger version detected!")
-    except ValueError:
-        logger.warning("Logger may be outdated or broken, did not provide Version!")
-except ModuleNotFoundError:
-    logger.error("Versioning module not found!")
+context = create_context()
+logger = context["logger"]
 
-# Startup Config
-config = None
-try:
-    from coreE import *
-    try:
-        from coreC import Configure
-        config = Configure("config.yml")
-        logger.info("Config Started!")
-    except ModuleNotFoundError:
-        logger.error("Config module not found!")
-        logger.info("Using default Values...")
-    except MissingImport:
-        logger.error(MissingImport)
-except ModuleNotFoundError:
-    logger.fatal("Error Module not found!")
-    exit(1)
+logger.info("Booting Silk Core...")
 
-# Try to set logger level based on config, if no config default to info
-if config:
-    level = config.get("environment", "log_level")
-    logger.set_mode(level)
-else:
-    logger.set_mode("INFO")
-logger.info(f"Logger Level Set to {logger.mode}")
+# Load core modules first
+load_all_from(".", context)
 
-# At this point the core should be ready to start the plugins?
+# Load plugins
+load_all_from("./plugins", context)
+
+logger.info("Silk started successfully!")

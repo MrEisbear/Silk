@@ -8,21 +8,44 @@ meta = {
     }
 }
 
-# Shitty Loader here - Open for future impovement
+# Very Shitty Loader here - Open for future impovement
 
 import importlib.util
 import os
 import sys
 import traceback
+import ruamel.yaml as yaml
+from dotenv import load_dotenv
+from packaging import version  # for version comparison
 
+# global tracker for loaded modules to prevent re-imports / loops
 loaded_modules = {}
 
+# ----------------------------
+# ENV and CONFIG loading
+# ----------------------------
+load_dotenv()  # loads .env into os.environ
+
+def load_config(path="config.yml"):
+    if not os.path.isfile(path):
+        return {}
+    with open(path, "r") as f:
+        return yaml.safe_load(f) or {}
+
+# ----------------------------
+# Import helpers
+# ----------------------------
 def import_module_from_path(path):
     """Imports a module from a given file path."""
     name = os.path.splitext(os.path.basename(path))[0]
+    # avoid re-import
+    if name in sys.modules:
+        return sys.modules[name]
+
     spec = importlib.util.spec_from_file_location(name, path)
     if not spec or not spec.loader:
         return None
+
     module = importlib.util.module_from_spec(spec)
     try:
         spec.loader.exec_module(module)
@@ -30,8 +53,11 @@ def import_module_from_path(path):
     except Exception:
         return None
 
+# ----------------------------
+# Dependency check
+# ----------------------------
 def check_dependencies(module, context):
-    """Check hard and soft dependencies."""
+    """Check hard and soft dependencies with version checks."""
     meta = getattr(module, "meta", None)
     logger = context["logger"]
 
@@ -42,19 +68,33 @@ def check_dependencies(module, context):
     hard = meta.get("depends", {}).get("hard", {})
     soft = meta.get("depends", {}).get("soft", {})
 
-    # Hard dependencies must exist
-    for dep, ver in hard.items():
-        if dep not in loaded_modules:
-            logger.error(f"[{meta['name']}] Missing HARD dependency {dep} ({ver})")
+    # Hard dependencies must exist and match version
+    for dep_id, dep_ver in hard.items():
+        dep_module = loaded_modules.get(dep_id)
+        if not dep_module:
+            logger.error(f"[{meta['name']}] Missing HARD dependency {dep_id} ({dep_ver})")
+            return False
+        # version check
+        dep_module_ver = getattr(dep_module, "meta", {}).get("version", "0.0.0")
+        if version.parse(dep_module_ver) < version.parse(dep_ver):
+            logger.error(f"[{meta['name']}] HARD dependency {dep_id} version {dep_ver}+ required (found {dep_module_ver})")
             return False
 
     # Soft dependencies warning only
-    for dep, ver in soft.items():
-        if dep not in loaded_modules:
-            logger.warning(f"[{meta['name']}] Missing SOFT dependency {dep} ({ver})")
+    for dep_id, dep_ver in soft.items():
+        dep_module = loaded_modules.get(dep_id)
+        if not dep_module:
+            logger.warning(f"[{meta['name']}] Missing SOFT dependency {dep_id} ({dep_ver})")
+            continue
+        dep_module_ver = getattr(dep_module, "meta", {}).get("version", "0.0.0")
+        if version.parse(dep_module_ver) < version.parse(dep_ver):
+            logger.warning(f"[{meta['name']}] SOFT dependency {dep_id} version {dep_ver}+ recommended (found {dep_module_ver})")
 
     return True
 
+# ----------------------------
+# Module loader
+# ----------------------------
 def load_module(path, context):
     """Load a single module with dependency check and init."""
     module = import_module_from_path(path)
@@ -66,6 +106,11 @@ def load_module(path, context):
     if not hasattr(module, "meta") or not hasattr(module, "init"):
         logger.warning(f"Module {path} missing meta or init(); skipping")
         return None
+
+    # Skip if already loaded (prevents loops)
+    if module.meta["id"] in loaded_modules:
+        logger.info(f"Module {module.meta['name']} ({module.meta['id']}) already loaded, skipping")
+        return loaded_modules[module.meta["id"]]
 
     # Check dependencies
     if not check_dependencies(module, context):
@@ -82,6 +127,9 @@ def load_module(path, context):
         logger.error(f"Module {module.meta['name']} failed during init:\n{traceback.format_exc()}")
         return None
 
+# ----------------------------
+# Folder loader
+# ----------------------------
 def load_all_from(folder, context):
     """Load all .py modules from a folder."""
     logger = context["logger"]
@@ -97,3 +145,19 @@ def load_all_from(folder, context):
             if mod:
                 modules.append(mod)
     return modules
+
+# ----------------------------
+# Full context setup
+# ----------------------------
+def create_context(logger=None):
+    if logger is None:
+        from coreL import Logger
+        logger = Logger("Core")
+
+    context = {
+        "logger": logger,
+        "config": load_config("config.yml"),
+        "env": os.environ,
+        "modules": loaded_modules
+    }
+    return context
