@@ -104,10 +104,13 @@ def load_module(path, context):
         logger.error(f"Failed to import module from {path}")
         return None
 
-    if not hasattr(module, "meta") or not hasattr(module, "init"):
-        logger.warning(f"Module {path} missing meta or init(); skipping")
+    if not hasattr(module, "meta"):
+        logger.warning(f"Module {path} missing meta; skipping")
         return None
-
+    if not hasattr(module, "init"):
+        logger.warning(f"Module {path} missing init(); skipping")
+        return None
+    
     # Skip if already loaded (prevents loops)
     if module.meta["id"] in loaded_modules:
         logger.info(f"Module {module.meta['name']} ({module.meta['id']}) already loaded, skipping")
@@ -138,9 +141,11 @@ def load_all_from(folder, context):
         logger.warning(f"{folder} does not exist; skipping")
         return []
 
+    excluded = {"core.py", "coreLoader.py"}
+
     modules = []
     for file in sorted(os.listdir(folder)):
-        if file.endswith(".py") and not file.startswith("__"):
+        if file.endswith(".py") and not file.startswith("__") and file not in excluded:
             path = os.path.join(folder, file)
             mod = load_module(path, context)
             if mod:
@@ -152,7 +157,7 @@ def load_all_from(folder, context):
 # ----------------------------
 def create_context(logger=None):
     if logger is None:
-        from coreL import Logger
+        from Modules.coreL import Logger
         logger = Logger("Core")
 
     context = {

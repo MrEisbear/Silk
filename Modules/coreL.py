@@ -98,16 +98,15 @@ class Logger:
         class ChildLogger:
             def __init__(self, module_name):
                 self.name = module_name
-            def info(self, msg): parent.info(self.name, msg)
-            def warning(self, msg): parent.warning(self.name, msg)
-            def error(self, msg): parent.error(self.name, msg)
-            def debug(self, msg): parent.debug(self.name, msg)
-            def verbose(self, msg): parent.verbose(self.name, msg)
-            def fatal(self, msg): parent.fatal(self.name, msg)
+            def info(self, msg): parent.info(msg, self.name)
+            def warning(self, msg): parent.warning(msg, self.name)
+            def error(self, msg): parent.error(msg, self.name)
+            def debug(self, msg): parent.debug(msg, self.name)
+            def verbose(self, msg): parent.verbose(msg, self.name)
+            def fatal(self, msg): parent.fatal(msg, self.name)
         return ChildLogger(name)
 
 
 def init(context):
     # Put Logger instance into context so other modules can use it
-    context["logger"] = Logger("CoreL")
-    context["logger"].info(f"{meta['name']} loaded successfully!")
+    context["logger"] = Logger("CoreLogger")
