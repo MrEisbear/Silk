@@ -15,6 +15,6 @@ logger = context["logger"].get_child(meta["name"])
 logger.info("Booting Silk Core...")
 # Load core modules first
 load_all_from("./Modules", context)
-# Load plugins
+# Load pluginso
 logger.info("Loading plugins...")
 load_all_from("./Plugins", context)
