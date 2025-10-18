@@ -1,6 +1,5 @@
 import mysql.connector
 from flask import g
-import dotenv
 import os
 from main import logger
 from main import config
@@ -9,10 +8,6 @@ from main import config
 
 class DataBase:
     def __init__(self):
-        env = config.get("environment", "en_file")
-        if env == None:
-            env = ".env"
-        dotenv.load_dotenv()
         self.host = os.getenv("HOST")
         self.user = os.getenv("USER")
         self.password = os.getenv("PASSWORD")
