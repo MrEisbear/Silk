@@ -94,34 +94,32 @@ def update_acc_details(data, account_uuid):
     return jsonify({"success": True, "message": "Account updated"})
 
 # Public Acc lookup
-@bp.route("/public/<uuid:account_uuid>", methods=["PATCH"])
-@require_token
-def lookup_uuid(data, account_uuid):
+@bp.route("/public/<uuid:account_uuid>", methods=["GET"])
+def lookup_uuid(account_uuid):
     logger.verbose(f"Retrieving balance from {account_uuid}...")
     with db_helper.cursor() as cur:
         cur.execute("SELECT balance, is_frozen, account_number FROM bank_accounts WHERE uuid = %s", (account_uuid,))
         row = cur.fetchone()
         account = cast(Dict[str, Any], row)
         if not row or account["is_frozen"]:
-            return jsonify({"error": "Account not found"})
+            return jsonify({"error": "Account not found"}), 404
     return jsonify({
         "account_number": account["account_number"],
         "balance": account["balance"]
-    })
+    }), 200
 
-@bp.route("/public/<accnum:accnum>", methods=["PATCH"])
-@require_token
-def lookup_accnum(data, accnum):
+@bp.route("/public/<string:accnum>", methods=["GET"])
+def lookup_accnum(accnum):
     
     with db_helper.cursor() as cur:
         cur.execute("SELECT balance, is_frozen, uuid FROM bank_accounts WHERE account_number  = %s", (accnum,))
         row = cur.fetchone()
         account = cast(Dict[str, Any], row)
         if not row or account["is_frozen"]:
-            return jsonify({"error": "Account not found"})
+            return jsonify({"error": "Account not found"}), 404
     logger.verbose(f"Retrieving balance from {account['uuid']}...")
     return jsonify({
         "balance": account["balance"],
         "uuid": account["uuid"]
-    })
+    }), 200
 
