@@ -99,12 +99,13 @@ def update_acc_details(data, account_uuid):
 def lookup_uuid(data, account_uuid):
     logger.verbose(f"Retrieving balance from {account_uuid}...")
     with db_helper.cursor() as cur:
-        cur.execute("SELECT balance, is_frozen FROM bank_accounts WHERE uuid = %s", (account_uuid,))
+        cur.execute("SELECT balance, is_frozen, account_number FROM bank_accounts WHERE uuid = %s", (account_uuid,))
         row = cur.fetchone()
         account = cast(Dict[str, Any], row)
         if not row or account["is_frozen"]:
             return jsonify({"error": "Account not found"})
     return jsonify({
+        "account_number": account["account_number"],
         "balance": account["balance"]
     })
 
