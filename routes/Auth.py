@@ -2,7 +2,7 @@
 
 from flask import Blueprint, redirect, request, jsonify
 from core.coreAuthUtil import hash_password, check_password, create_jwt, require_token
-from main import db_helper
+from core.database import db_helper
 from core.logger import logger
 from typing import cast, Dict, Any
 import os
@@ -92,7 +92,7 @@ def discord_link():
     logger.verbose("New Discord link request...")
     return redirect(url)
 
-@bp.route("/auth/discord/callback")
+@bp.route("/discord/callback")
 def discord_callback():
     logger.verbose("Recieved discord call back...")
     code = request.args.get("code")
@@ -211,7 +211,7 @@ def change_password(data):
     logger.verbose(f"Password updated for user {user_id}")
     return jsonify({"success": True, "message": "Password updated"})
 
-@bp.route("/auth/discord/link", methods=["POST"])
+@bp.route("/discord/link-call", methods=["POST"])
 @require_token
 def link_discord(data):
     user_id = data["id"]
