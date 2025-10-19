@@ -23,6 +23,12 @@ dotenv.load_dotenv()
 from core.database import db_helper
 #Create the flask app and start the database
 app = Flask(__name__)
+
+# Set CORS
+from flask_cors import CORS
+CORS(app, origins=["https://brickrigs.de"], supports_credentials=True)
+
+# Register blueprints and Start App
 from routes import register_blueprints
 register_blueprints(app)
 if __name__ == "__main__":
