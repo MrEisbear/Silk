@@ -47,6 +47,7 @@ def create_user_accounts(data):
             logger.verbose(f"Failed to create Bank Account for {user_id}. attempted accnum = {accnum}")
             return jsonify({"error": "Failed to create bank account"}), 500
         cur.execute("INSERT INTO bank_accounts (account_number, account_holder_type, account_holder_id) VALUES (%s, %s, %s)", (accnum, 'user', user_id,))
+    logger.verbose(f"Bank Account created for {user_id}; {accnum}")
     return jsonify({"account_number": accnum}), 201
 
 @bp.route("/accounts/<uuid:account_uuid>", methods=["GET"])
@@ -54,6 +55,7 @@ def create_user_accounts(data):
 def retrieve_acc_details(data, account_uuid):
     user_id = data["id"]
     account_uuid = str(account_uuid)
+    logger.verbose(f"Retrieving bank account {account_uuid}...")
     with db_helper.cursor() as cur:
         cur.execute("SELECT * FROM bank_accounts WHERE uuid = %s", (account_uuid,))
         row = cur.fetchone()
@@ -95,6 +97,7 @@ def update_acc_details(data, account_uuid):
 @bp.route("/public/<uuid:account_uuid>", methods=["PATCH"])
 @require_token
 def lookup_uuid(data, account_uuid):
+    logger.verbose(f"Retrieving balance from {account_uuid}...")
     with db_helper.cursor() as cur:
         cur.execute("SELECT balance, is_frozen FROM bank_accounts WHERE uuid = %s", (account_uuid,))
         row = cur.fetchone()
@@ -108,15 +111,16 @@ def lookup_uuid(data, account_uuid):
 @bp.route("/public/<accnum:accnum>", methods=["PATCH"])
 @require_token
 def lookup_accnum(data, accnum):
+    
     with db_helper.cursor() as cur:
         cur.execute("SELECT balance, is_frozen, uuid FROM bank_accounts WHERE account_number  = %s", (accnum,))
         row = cur.fetchone()
         account = cast(Dict[str, Any], row)
         if not row or account["is_frozen"]:
             return jsonify({"error": "Account not found"})
+    logger.verbose(f"Retrieving balance from {account['uuid']}...")
     return jsonify({
         "balance": account["balance"],
         "uuid": account["uuid"]
     })
 
-    
