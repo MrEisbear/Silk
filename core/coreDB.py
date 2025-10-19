@@ -3,7 +3,7 @@ from contextlib import contextmanager
 import mysql.connector
 from flask import g
 import os
-from main import logger
+from core.logger import logger
 
 class DataBase:
     def __init__(self):

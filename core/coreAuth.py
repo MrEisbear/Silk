@@ -2,7 +2,8 @@
 
 from flask import Blueprint, redirect, request, jsonify
 from core.coreAuthUtil import hash_password, check_password, create_jwt, require_token
-from main import logger, db_helper
+from main import db_helper
+from core.logger import logger
 from typing import cast, Dict, Any
 import os
 import requests

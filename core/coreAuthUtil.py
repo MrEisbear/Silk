@@ -5,7 +5,7 @@ from whenever import Instant, hours
 from flask import request, jsonify
 import os
 from typing import Any, Callable
-from main import logger
+from core.logger import logger
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
