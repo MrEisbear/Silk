@@ -68,7 +68,7 @@ REDIRECT_URI = os.getenv("DISCORD_REDIRECT_URI")
 REDIRECT_URI_LINK = os.getenv("DISCORD_REDIRECT_URI_LINK")
 
 
-@bp.route("/discord", methods=["POST"])
+@bp.route("/discord", methods=["GET"])
 def discord_login():
     params = {
         "client_id": CLIENT_ID,
@@ -80,7 +80,7 @@ def discord_login():
     logger.verbose("New Discord login request...")
     return redirect(url)
 
-@bp.route("/discord/link", methods=["POST"])
+@bp.route("/discord/link", methods=["GET"])
 def discord_link():
     params = {
         "client_id": CLIENT_ID,
