@@ -66,6 +66,7 @@ CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
 CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
 REDIRECT_URI = os.getenv("DISCORD_REDIRECT_URI")
 REDIRECT_URI_LINK = os.getenv("DISCORD_REDIRECT_URI_LINK")
+BASE_URL = os.getenv("FRONTEND_LINK")
 
 
 @bp.route("/discord", methods=["GET"])
@@ -94,11 +95,14 @@ def discord_link():
 
 @bp.route("/discord/callback")
 def discord_callback():
+    if BASE_URL == None:
+        logger.error("Base URL missing in .env file!")
+        return redirect("http://brickrigs.de/login?err=500")
     logger.verbose("Recieved discord call back...")
     code = request.args.get("code")
     if not code:
         logger.verbose("Discord callback had no auth code")
-        return jsonify({"error": "No authorization code provided"}), 400
+        return redirect(BASE_URL + "/login?err=400")
     token_data = {
         "client_id": CLIENT_ID,
         "client_secret": CLIENT_SECRET,
@@ -117,7 +121,7 @@ def discord_callback():
     )
     if token_resp.status_code != 200:
         logger.error(f"Discord token exchange failed: {token_resp.text}")
-        return jsonify({"error": "Authentication failed"}), 401
+        return redirect(BASE_URL + "/login?err=401")
 
     access_token = token_resp.json()["access_token"]
 
@@ -137,7 +141,7 @@ def discord_callback():
     internal_user_id: int
     if email == None:
         logger.verbose(f"{username} did not grand email permission, callback denied.")
-        return jsonify({"error": "Email permission not granted"}), 400
+        return redirect(BASE_URL + "/login?err=400")
     with db_helper.cursor() as cur:
         cur.execute("SELECT id FROM users WHERE discord_id = %s", (discord_id,))
         raw_row = cur.fetchone()
@@ -148,14 +152,14 @@ def discord_callback():
                 internal_user_id = int(row["id"])
             except (ValueError, TypeError, KeyError):
                 logger.error(f"Invalid user ID in DB for discord_id={discord_id}: {row}")
-                return jsonify({"error": "Internal server error"}), 500
+                return redirect(BASE_URL + "/login?err=500")
         else:
             # Insert new user
             cur.execute("SELECT id FROM users WHERE email = %s", (email))
             exists = cur.fetchone()
             if exists:
                 logger.verbose(f"User with email {email} already exists")
-                return jsonify({"error": "User already exists"}), 409
+                return redirect(BASE_URL + "/login?err=409")
             cur.execute("""
                 INSERT INTO users (uuid, username, email, discord_id, manual)
                 VALUES (UUID(), %s, %s, %s, FALSE)
@@ -163,13 +167,13 @@ def discord_callback():
             raw_id = cur.lastrowid
             if raw_id is None:
                 logger.error("Failed to retrieve last inserted ID")
-                return jsonify({"error": "Internal server error"}), 500
+                return redirect(BASE_URL + "/login?err=500")
             internal_user_id: int = int(raw_id)
 
     # Issue JWT
     token = create_jwt(internal_user_id)
     logger.verbose(f"Discord user {discord_id} authenticated as internal user {internal_user_id}")
-    return jsonify({"token": token})
+    return redirect(BASE_URL + "/dash" f"?token={token}")
 
 @bp.route("/change-password", methods=["POST"])
 @require_token
@@ -214,13 +218,16 @@ def change_password(data):
 @bp.route("/discord/link-call", methods=["POST"])
 @require_token
 def link_discord(data):
+    if BASE_URL == None:
+        logger.error("Base URL missing in .env file!")
+        return redirect("http://brickrigs.de/login?err=500")
     user_id = data["id"]
     req = request.get_json()
     discord_code = req.get("code")
 
     if not discord_code:
         logger.verbose("Discord link failed due to missing code; 400")
-        return jsonify({"error": "Authorization code required"}), 400
+        return redirect(BASE_URL + "/dash" f"?link=400")
 
     # Exchange code for token (same as callback)
     token_data = {
@@ -239,7 +246,7 @@ def link_discord(data):
     )
     if token_resp.status_code != 200:
         logger.verbose("Discord link failed due to invalid code; 400")
-        return jsonify({"error": "Invalid Discord code"}), 400
+        return redirect(BASE_URL + "/dash" f"?link=400")
 
     access_token = token_resp.json()["access_token"]
 
@@ -251,7 +258,7 @@ def link_discord(data):
     )
     if user_resp.status_code != 200:
         logger.verbose("Discord link failed due could not fetch Discord profile; 400")
-        return jsonify({"error": "Could not fetch Discord profile"}), 400
+        return redirect(BASE_URL + "/dash" f"?link=400")
 
     discord_user = user_resp.json()
     discord_id = discord_user["id"]
@@ -261,11 +268,11 @@ def link_discord(data):
         cur.execute("SELECT id FROM users WHERE discord_id = %s", (discord_id,))
         if cur.fetchone():
             logger.verbose("Discord link failed due to already linked discord account; 400")
-            return jsonify({"error": "This Discord account is already linked"}), 409
+            return redirect(BASE_URL + "/dash" f"?link=409")
         cur.execute("SELECT discord_id FROM users WHERE id = %s", (user_id,))
         if cur.fetchone():
             logger.verbose("Discord link failed due to already linked account; 400")
-            return jsonify({"error": "This account is already linked"}), 409
+            return redirect(BASE_URL + "/dash" f"?link=409")
 
         # Link to current user
         cur.execute(
@@ -274,4 +281,4 @@ def link_discord(data):
         )
 
     logger.verbose(f"User {user_id} linked Discord ID {discord_id}")
-    return jsonify({"success": True, "message": "Discord account linked"})
+    return redirect(BASE_URL + "/dash" f"?link=200")
