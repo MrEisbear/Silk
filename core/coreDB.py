@@ -40,7 +40,7 @@ class DataBase:
         if db is not None:
             logger.verbose("Closing database connection...")
             db.close()
-            
+
     @contextmanager
     def cursor(self):
         cur = self.get_cursor()
@@ -48,3 +48,19 @@ class DataBase:
             yield cur
         finally:
             cur.close()
+
+    @contextmanager
+    def transaction(self):
+        """Context manager for atomic transactions (even with autocommit=True globally)."""
+        db = self.get_db()
+        # Save current autocommit state (optional)
+        db.autocommit = False # type: ignore
+        try:
+            db.start_transaction()
+            yield db
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.autocommit = True  # restore if neede # type: ignore
