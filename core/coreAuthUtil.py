@@ -10,11 +10,23 @@ from core.logger import logger
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
     raise RuntimeError("SECRET_KEY environment variable is required")
+PIN_SALT = os.getenv("PIN_SALT")
+if not PIN_SALT:
+    raise RuntimeError("PIN_SALT environment variable is required")
 
 def hash_password(password: str) -> str:
     logger.verbose("New Password hash generated!")
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
+def hash_pin(pin: str, uuid: str, ) -> str:
+    logger.verbose("New PIN hash generated!")
+    data = f"{pin}:{uuid}:{PIN_SALT}"
+    return bcrypt.hashpw(data.encode(), bcrypt.gensalt()).decode()
+
+def check_pin(pin: str, uuid: str, hashed: str) -> bool:
+    logger.verbose("A PIN got checked")
+    data = f"{pin}:{uuid}:{PIN_SALT}"
+    return bcrypt.checkpw(data.encode(), hashed.encode())
 
 def check_password(password: str, hashed: str) -> bool:
     logger.verbose("A password got checked")

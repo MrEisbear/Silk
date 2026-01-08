@@ -18,7 +18,7 @@ class DataBase:
             raise RuntimeError("Missing database environment variables!")
         if not self.port:
             self.port = 3306
-        logger.warning("DB_PORT not set, using default port (3006)")
+            logger.warning("DB_PORT not set, using default port (3006)")
 
 
     def get_db(self):
