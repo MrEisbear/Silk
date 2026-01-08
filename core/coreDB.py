@@ -19,6 +19,7 @@ class DataBase:
         if not self.port:
             self.port = 3306
             logger.warning("DB_PORT not set, using default port (3006)")
+        self.port = int(self.port) # Cast to INT for DB
 
 
     def get_db(self):
@@ -33,7 +34,7 @@ class DataBase:
                 database=self.database,
                 autocommit=True,
             )
-        logger.verbose("New Database connection opened!")
+            logger.verbose("New Database connection opened!")
         return g.db
 
     def get_cursor(self):
