@@ -10,11 +10,16 @@ class DataBase:
         logger.verbose("Initializing database connection...")
         self.host = os.getenv("DB_HOST")
         self.user = os.getenv("DB_USER")
+        self.port = os.getenv("DB_PORT")
         self.password = os.getenv("DB_PASSWORD")
         self.database = os.getenv("DB_NAME")
         if not all([self.user, self.password, self.database]):
             logger.fatal("Missing database environment variables!")
             raise RuntimeError("Missing database environment variables!")
+        if not self.port:
+            self.port = 3306
+        logger.warning("DB_PORT not set, using default port (3006)")
+
 
     def get_db(self):
         """Get or create a DB connection for the current request."""
@@ -23,6 +28,7 @@ class DataBase:
             g.db = mysql.connector.connect(
                 host=self.host,
                 user=self.user,
+                port=self.port,
                 password=self.password,
                 database=self.database,
                 autocommit=True,
