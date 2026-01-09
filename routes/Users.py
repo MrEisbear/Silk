@@ -81,11 +81,11 @@ def is_valid_url(url: str) -> bool:
     except Exception:
         return False
 
-@bp.route("/user/<uuid:user_uuid>")
+@bp.route("/user/<uuid:user_uuid>", methods=["GET"])
 def public_profile(user_uuid):
     ip = request.headers.get("X-Forwarded-For", request.remote_addr)
     with db_helper.cursor() as cur:
-        cur.execute("SELECT username, avatar_url, created_at FROM users WHERE uuid = %s AND is_banned = 0", (str(user_uuid),))
+        cur.execute("SELECT username, avatar_url, created_at, discord_id, uuid, id FROM users WHERE uuid = %s AND is_banned = 0", (str(user_uuid),))
         row = cur.fetchone()
         if not row:
             return jsonify({"error": "User not found"}), 404
@@ -93,6 +93,25 @@ def public_profile(user_uuid):
         logger.verbose(f"user {user['username']} requested from {ip}")
         return jsonify({
             "uuid": str(user_uuid),
+            "id": user["id"],
+            "username": user["username"],
+            "avatar_url": user["avatar_url"],
+            "created_at": user["created_at"].isoformat() if user["created_at"] else None,
+            "discord_id": user["discord_id"]
+        })
+
+@bp.route("/user/<string:userid>", methods=["GET"])
+def public_profile_id(userid):
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    with db_helper.cursor() as cur:
+        cur.execute("SELECT username, avatar_url, created_at, uuid, discord_id FROM users WHERE id = %s AND is_banned = 0", (str(userid),))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": "User not found"}), 404
+        user = cast(Dict[str, Any], row)
+        logger.verbose(f"user {user['username']} requested from {ip}")
+        return jsonify({
+            "uuid": str(user["uuid"]),
             "username": user["username"],
             "avatar_url": user["avatar_url"],
             "created_at": user["created_at"].isoformat() if user["created_at"] else None,

@@ -18,7 +18,7 @@ class DataBase:
             raise RuntimeError("Missing database environment variables!")
         if not self.port:
             self.port = 3306
-            logger.warning("DB_PORT not set, using default port (3006)")
+            logger.warning("DB_PORT not set, using default port (3306)")
         self.port = int(self.port) # Cast to INT for DB
 
 
@@ -33,6 +33,7 @@ class DataBase:
                 password=self.password,
                 database=self.database,
                 autocommit=True,
+                connection_timeout=5,
             )
             logger.verbose("New Database connection opened!")
         return g.db

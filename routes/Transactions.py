@@ -19,7 +19,7 @@ def get_all_transactions(data):
         return jsonify({"transactions": rows}), 200
 
 
-@bp.route("/bank/transactions/<uuid:tx_uuid>", methods=["GET"])
+@bp.route("/transactions/<uuid:tx_uuid>", methods=["GET"])
 @require_token
 def get_transaction(data, tx_uuid):
     logger.verbose(f"Getting transaction data for {data['id']}")

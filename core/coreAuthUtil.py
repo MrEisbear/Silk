@@ -6,6 +6,7 @@ from flask import request, jsonify
 import os
 from typing import Any, Callable
 from core.logger import logger
+import hashlib
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
@@ -18,15 +19,22 @@ def hash_password(password: str) -> str:
     logger.verbose("New Password hash generated!")
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
-def hash_pin(pin: str, uuid: str, ) -> str:
-    logger.verbose("New PIN hash generated!")
-    data = f"{pin}:{uuid}:{PIN_SALT}"
-    return bcrypt.hashpw(data.encode(), bcrypt.gensalt()).decode()
+def _pin_material(pin: str, uuid: str) -> bytes:
+    data = f"{pin}:{uuid}:{PIN_SALT}".encode()
+    return hashlib.sha256(data).digest()
 
-def check_pin(pin: str, uuid: str, hashed: str) -> bool:
+def hash_pin(pin: str, uuid: str) -> str:
+    logger.verbose("New PIN hash generated!")
+    material = _pin_material(pin, uuid)
+    return bcrypt.hashpw(material, bcrypt.gensalt()).decode()
+
+def check_pin(pin: str, uuid: str, hashed: str | None) -> bool:
+    if not hashed:
+        logger.verbose("Pin Check failed, no Hashed Pin")
+        return False
+    material = _pin_material(pin, uuid)
     logger.verbose("A PIN got checked")
-    data = f"{pin}:{uuid}:{PIN_SALT}"
-    return bcrypt.checkpw(data.encode(), hashed.encode())
+    return bcrypt.checkpw(material, hashed.encode())
 
 def check_password(password: str, hashed: str) -> bool:
     logger.verbose("A password got checked")
