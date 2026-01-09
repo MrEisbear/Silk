@@ -85,7 +85,7 @@ def discord_login():
 def discord_link():
     params = {
         "client_id": CLIENT_ID,
-        "redirect_uri": REDIRECT_URI_LINK,
+        "redirect_uri": REDIRECT_URI,
         "response_type": "code",
         "scope": "identify guilds guilds.members.read",
     }
@@ -145,7 +145,6 @@ def discord_callback():
     with db_helper.cursor() as cur:
         cur.execute("SELECT id FROM users WHERE discord_id = %s", (discord_id,))
         raw_row = cur.fetchone()
-
         if raw_row is not None:
             row = cast(Dict[str, Any], raw_row)
             try:
@@ -155,20 +154,23 @@ def discord_callback():
                 return redirect(BASE_URL + "/login?err=500")
         else:
             # Insert new user
-            cur.execute("SELECT id FROM users WHERE email = %s", (email))
-            exists = cur.fetchone()
-            if exists:
-                logger.verbose(f"User with email {email} already exists")
-                return redirect(BASE_URL + "/login?err=409")
-            cur.execute("""
-                INSERT INTO users (uuid, username, email, discord_id, manual)
-                VALUES (UUID(), %s, %s, %s, FALSE)
-            """, (username, email, discord_id))
-            raw_id = cur.lastrowid
-            if raw_id is None:
-                logger.error("Failed to retrieve last inserted ID")
-                return redirect(BASE_URL + "/login?err=500")
-            internal_user_id: int = int(raw_id)
+            cur.execute("SELECT id FROM users WHERE email = %s", (email,))
+            existing_user = cur.fetchone()
+            existing_user = cast(Dict[str, Any], existing_user)
+            if existing_user:
+                internal_user_id = int(existing_user["id"])
+                cur.execute("UPDATE users SET discord_id = %s WHERE id = %s", (discord_id, internal_user_id,))
+                logger.verbose(f"Linked existing email {email} to new discord_id {discord_id}")
+            else:
+                cur.execute("""
+                    INSERT INTO users (uuid, username, email, discord_id, manual)
+                    VALUES (UUID(), %s, %s, %s, FALSE)
+                """, (username, email, discord_id))
+                raw_id = cur.lastrowid
+                if raw_id is None:
+                    logger.error("Failed to retrieve last inserted ID")
+                    return redirect(BASE_URL + "/login?err=500")
+                internal_user_id: int = int(raw_id)
 
     # Issue JWT
     token = create_jwt(internal_user_id)
