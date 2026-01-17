@@ -103,7 +103,9 @@ def update_acc_details(data, account_uuid):
                 return jsonify({"error": "Account not found"}), 404
             cur.execute("UPDATE bank_accounts SET is_frozen = %s WHERE uuid = %s", (freeze, account_uuid))
         return jsonify({"success": True, "message": "Account updated"})
-    pin = req.get("pin")
+    pin = str(req.get("pin"))
+    if len(pin) not in [4, 5, 6]:
+        return jsonify({"error": "Invalid JSON"}), 400
     pin = hash_pin(pin, account_uuid)
     if pin:
         logger.verbose(f"Updating Pin for account {account_uuid}...")
@@ -130,7 +132,7 @@ def lookup_uuid(account_uuid):
     account_uuid = str(account_uuid)
     logger.verbose(f"Retrieving public info from {account_uuid}...")
     with db_helper.cursor() as cur:
-        cur.execute("SELECT balance, is_frozen, account_number, account_holder_id, account_holder_type FROM bank_accounts WHERE uuid = %s", (account_uuid,))
+        cur.execute("SELECT balance, id, is_frozen, account_number, account_holder_id, account_holder_type FROM bank_accounts WHERE uuid = %s", (account_uuid,))
         row = cur.fetchone()
         account = cast(Dict[str, Any], row)
         if not row or account["is_frozen"]:
@@ -138,6 +140,7 @@ def lookup_uuid(account_uuid):
         account_number = account["account_number"]
         balance = account["balance"]
         holder = account["account_holder_id"]
+        acc_id = account["id"]
         acctype = str(account["account_holder_type"])
         if acctype == "user":
             cur.execute("SELECT username FROM users WHERE id = %s",(holder,))
@@ -153,11 +156,11 @@ def lookup_uuid(account_uuid):
         "account_number": account_number,
         "balance": balance,
         "holder": holder,
+        "id": acc_id,
     }), 200
 
 @bp.route("/public/<string:accnum>", methods=["GET"])
 def lookup_accnum(accnum):
-    
     with db_helper.cursor() as cur:
         cur.execute("SELECT balance, is_frozen, uuid, account_holder_id, account_holder_type FROM bank_accounts WHERE account_number  = %s", (accnum,))
         row = cur.fetchone()
@@ -167,6 +170,7 @@ def lookup_accnum(accnum):
         logger.verbose(f"Retrieving public info from {account['uuid']}...")
         account_uuid = account["uuid"]
         balance = account["balance"]
+        acc_id = account["id"]
         holder = account["account_holder_id"]
         acctype = str(account["account_holder_type"])
         if acctype == "user":
@@ -183,5 +187,6 @@ def lookup_accnum(accnum):
         "account_uuid": account_uuid,
         "balance": balance,
         "holder": holder,
+        "id": acc_id,
     }), 200
 

@@ -87,7 +87,7 @@ def discord_link():
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
         "response_type": "code",
-        "scope": "identify guilds guilds.members.read",
+        "scope": "identify email guilds guilds.members.read",
     }
     url = f"https://discord.com/api/oauth2/authorize?{urlencode(params)}"
     logger.verbose("New Discord link request...")
@@ -135,6 +135,8 @@ def discord_callback():
         return jsonify({"error": "Failed to fetch user data"}), 401
 
     discord_user = user_resp.json()
+    if not discord_user:
+        return redirect(BASE_URL + "/login?err=400")
     discord_id = discord_user["id"]
     email = discord_user.get("email")
     username = discord_user["username"]
@@ -215,72 +217,4 @@ def change_password(data):
             (hash_password(new_password), user_id)
         )
     logger.verbose(f"Password updated for user {user_id}")
-    return jsonify({"success": True, "message": "Password updated"})
-
-@bp.route("/discord/link-call", methods=["POST"])
-@require_token
-def link_discord(data):
-    if BASE_URL == None:
-        logger.error("Base URL missing in .env file!")
-        return redirect("http://brickrigs.de/login?err=500")
-    user_id = data["id"]
-    req = request.get_json()
-    discord_code = req.get("code")
-
-    if not discord_code:
-        logger.verbose("Discord link failed due to missing code; 400")
-        return redirect(BASE_URL + "/dash" f"?link=400")
-
-    # Exchange code for token (same as callback)
-    token_data = {
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "grant_type": "authorization_code",
-        "code": discord_code,
-        "redirect_uri": REDIRECT_URI_LINK,
-        "scope": "identify guilds guilds.members.read",
-    }
-    token_resp = requests.post(
-        "https://discord.com/api/oauth2/token",
-        data=token_data,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        timeout=10,
-    )
-    if token_resp.status_code != 200:
-        logger.verbose("Discord link failed due to invalid code; 400")
-        return redirect(BASE_URL + "/dash" f"?link=400")
-
-    access_token = token_resp.json()["access_token"]
-
-    # Get Discord user
-    user_resp = requests.get(
-        "https://discord.com/api/users/@me",
-        headers={"Authorization": f"Bearer {access_token}"},
-        timeout=10,
-    )
-    if user_resp.status_code != 200:
-        logger.verbose("Discord link failed due could not fetch Discord profile; 400")
-        return redirect(BASE_URL + "/dash" f"?link=400")
-
-    discord_user = user_resp.json()
-    discord_id = discord_user["id"]
-
-    # Ensure this Discord account isn't already linked
-    with db_helper.cursor() as cur:
-        cur.execute("SELECT id FROM users WHERE discord_id = %s", (discord_id,))
-        if cur.fetchone():
-            logger.verbose("Discord link failed due to already linked discord account; 400")
-            return redirect(BASE_URL + "/dash" f"?link=409")
-        cur.execute("SELECT discord_id FROM users WHERE id = %s", (user_id,))
-        if cur.fetchone():
-            logger.verbose("Discord link failed due to already linked account; 400")
-            return redirect(BASE_URL + "/dash" f"?link=409")
-
-        # Link to current user
-        cur.execute(
-            "UPDATE users SET discord_id = %s WHERE id = %s",
-            (discord_id, user_id)
-        )
-
-    logger.verbose(f"User {user_id} linked Discord ID {discord_id}")
-    return redirect(BASE_URL + "/dash" f"?link=200")
+    return jsonify({"success": True, "message": "Password updated"})    

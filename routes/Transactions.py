@@ -9,17 +9,31 @@ from decimal import Decimal
 bp = Blueprint("transactions", __name__, url_prefix="/api/bank")
 
 
-@bp.route("/transactions", methods=["GET"])
+@bp.route("/view-transactions", methods=["POST"])
 @require_token
 def get_all_transactions(data):
-    logger.verbose(f"Getting transaction data for {data['id']}")
+    user_id = data["id"]  # internal int ID from JWT
+    req = request.get_json()
+
+    if not req or not all(k in req for k in ("acc_id",)):
+        return jsonify({"error": "Missing required fields"}), 400
+
+    account_id = req["acc_id"]
+    logger.verbose(f"Getting transaction data for {account_id}")
     with db_helper.cursor() as cur:
-        cur.execute("SELECT uuid, transaction_type, from_account_id, to_account_id, amount, confirmed, created_at, description, metadata, tax_category FROM transactions WHERE to_account_id = %s OR from_account_id = %s", (data["id"]), (data["id"]))
+        cur.execute("SELECT account_holder_id FROM bank_accounts WHERE id = %s", (account_id,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": "Account not found"}), 404
+        parse = cast(Dict[str, Any], row)
+        if int(parse["account_holder_id"]) != int(user_id):
+            return jsonify({"error": "Account not found"}), 404
+        cur.execute("SELECT uuid, transaction_type, from_account_id, to_account_id, amount, confirmed, created_at, description, metadata, tax_category FROM transactions WHERE to_account_id = %s OR from_account_id = %s", (account_id, account_id,))
         rows = cur.fetchall()
         return jsonify({"transactions": rows}), 200
 
 
-@bp.route("/transactions/<uuid:tx_uuid>", methods=["GET"])
+@bp.route("/view-transactions/<uuid:tx_uuid>", methods=["GET"])
 @require_token
 def get_transaction(data, tx_uuid):
     logger.verbose(f"Getting transaction data for {data['id']}")
