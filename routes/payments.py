@@ -78,6 +78,8 @@ def issue_SP_token():
             return jsonify({"error": "Account is frozen"}), 403
         if int(sender["is_deleted"]) != 0 or int(reciever["is_deleted"]) != 0:
             return jsonify({"error": "Account not found"}), 403
+        
+        # Only Users as recievers available for now
         if int(reciever_type) != 1:
             return jsonify({"error": "Not Implemented"}), 501
 
