@@ -220,7 +220,7 @@ def make_payment(data):
                     tax_category,
                     description,
                     confirmed
-                ) VALUES (%s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
             """, ("payment", donor["id"], receiver["id"], amount, tax_category, description, 1))
             transaction_id = cur.lastrowid
 
