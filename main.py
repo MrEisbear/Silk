@@ -19,7 +19,7 @@ logger.set_mode(config.get("environment", "log_level"))
 env = config.get("environment", "env_file")
 if env == None:
     env = ".env"
-dotenv.load_dotenv()
+dotenv.load_dotenv(env)
 from core.database import db_helper
 #Create the flask app and start the database
 app = Flask(__name__)
