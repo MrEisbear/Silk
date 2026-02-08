@@ -5,10 +5,11 @@ from core.logger import logger
 from typing import Dict, Any, cast
 import os
 from decimal import Decimal
+import simplejson as json
 import secrets
 import string
 from whenever import Instant, minutes, hours
-import json
+from datetime import timezone
 
 bp = Blueprint("giftcards", __name__, url_prefix="/api/bank")
 
@@ -35,8 +36,13 @@ def redeem_giftcard(data):
             return jsonify({"error": "Giftcard not found"}), 404
         giftcard = cast(Dict[str, Any], row)
         amount = giftcard["amount"]
+        is_active = int(giftcard["is_active"])
+        if is_active != 1:
+            return jsonify({"error": "Giftcard already used"}), 400
         source_acc = giftcard["created_by"]
         expires_at = giftcard["expires_at"] 
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
         
         if Instant.now().py_datetime() > expires_at:
             metadata = {
@@ -92,35 +98,41 @@ def redeem_giftcard(data):
         "provider": "LinePay"
         }
             
-        with db_helper.transaction() as db:
-            cur = db.cursor(dictionary=True)
-            try:
-                cur.execute("""
-                INSERT INTO transactions (
-                    transaction_type, 
-                    to_account_id,
-                    amount,
-                    confirmed,
-                    description,
-                    metadata
-                ) VALUES (%s, %s, %s, %s, %s, %s)
-                """, ("giftcard", acc_id, amount, 1, str(desc), json.dumps(metadata)))
-                transaction_id = cur.lastrowid
+    with db_helper.transaction() as db:
+        cur = db.cursor(dictionary=True)
+        try:
+            cur.execute("""
+                    UPDATE gift_codes SET
+                    redeemed_by = %s,
+                    redeemed_at = %s,
+                    is_active = %s
+                    WHERE code = %s AND is_active = 1
+                    """, (acc_id, redeemed_at, 0, code))
             
-                cur.execute("""
-                        UPDATE gift_codes SET
-                        redeemed_by = %s,
-                        redeemed_at = %s,
-                        is_active = %s
-                        """, (acc_id, redeemed_at, 0))
-                cur.execute("UPDATE bank_accounts SET balance = balance + %s WHERE uuid = %s",
-                    (amount, to_account))
-            finally:
+            if cur.rowcount == 0:
                 cur.close()
-            return jsonify({
-                "transaction_id": transaction_id,
-                "amount": amount
-            }), 200
+                return jsonify({"error": "Giftcard already redeemed or invalid"}), 400
+            
+            cur.execute("""
+            INSERT INTO transactions (
+                transaction_type, 
+                to_account_id,
+                amount,
+                confirmed,
+                description,
+                metadata
+            ) VALUES (%s, %s, %s, %s, %s, %s)
+            """, ("giftcard", acc_id, amount, 1, str(desc), json.dumps(metadata)))
+            transaction_id = cur.lastrowid
+            
+            cur.execute("UPDATE bank_accounts SET balance = balance + %s WHERE uuid = %s",
+                (amount, to_account))
+        finally:
+            cur.close()
+        return jsonify({
+            "transaction_id": transaction_id,
+            "amount": amount
+        }), 200
                 
         
 
