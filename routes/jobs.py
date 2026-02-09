@@ -10,7 +10,7 @@ bp_jobs = Blueprint("jobs", __name__, url_prefix="/api/jobs")
 
 @bp_jobs.route("/", methods=["GET"])
 @require_token
-def geta_jobs(data):
+def get_jobs(data):
     """
     Returns the user's jobs, their calculated highest salary class, 
     and the status of their daily claim.
@@ -73,4 +73,120 @@ def geta_jobs(data):
         "can_claim": can_claim,
         "last_claim": last_claim.isoformat() if last_claim else None,
         "next_claim_at": next_claim_time
+    }), 200
+
+# This route is a contribution by Google
+@bp_jobs.route("/claim", methods=["POST"])
+@require_token
+def claim_salary(data):
+    user_id = data["id"]
+    req = request.get_json()
+    
+    if not req or "account_id" not in req:
+        return jsonify({"success": False, "message": "Missing account_id"}), 400
+        
+    target_account_uuid = req["account_id"]
+    
+    # Use a transaction to ensure atomicity
+    with db_helper.transaction() as db:
+        cur = db.cursor(dictionary=True)
+        try:
+            # 1. Verify User & Get Last Claim
+            cur.execute("SELECT uuid, last_salary_claim FROM users WHERE id = %s FOR UPDATE", (user_id,))
+            user_row = cur.fetchone()
+            if not user_row:
+                return jsonify({"success": False, "message": "User not found"}), 404
+            
+            user_row = cast(Dict[str, Any], user_row)
+            user_uuid = user_row["uuid"]
+            last_claim = user_row["last_salary_claim"]
+            
+            # 2. Check Cooldown
+            if last_claim:
+                cooldown_expires = last_claim + timedelta(hours=24)
+                if datetime.now() < cooldown_expires:
+                    return jsonify({
+                        "success": False,
+                        "message": "Cooldown active",
+                        "cooldown": cooldown_expires.isoformat()
+                    }), 403
+
+            # 3. Calculate Salary Amount
+            cur.execute("""
+                SELECT sc.daily_amount, j.job_name, sc.class_level
+                FROM user_jobs uj
+                JOIN jobs j ON uj.job_id = j.id
+                JOIN salary_classes sc ON j.salary_class = sc.class_level
+                WHERE uj.user_uuid = %s
+                ORDER BY sc.daily_amount DESC
+                LIMIT 1
+            """, (user_uuid,))
+            
+            job_row = cur.fetchone()
+            if not job_row:
+                 return jsonify({"success": False, "message": "Jobless"}), 400
+                 
+            job_row = cast(Dict[str, Any], job_row)
+            salary_amount = job_row["daily_amount"]
+            job_name = job_row["job_name"]
+            class_level = job_row["class_level"]
+            
+            if salary_amount <= 0:
+                 return jsonify({"success": False, "message": "Salary amount is zero or negative"}), 400
+
+            # 4. Verify Target Account
+            cur.execute("SELECT id, is_frozen, is_deleted FROM bank_accounts WHERE uuid = %s AND account_holder_id = %s", (target_account_uuid, user_id))
+            account_row = cur.fetchone()
+            
+            if not account_row:
+                return jsonify({"success": False, "message": "Account not found or not owned by user"}), 404
+            
+            account_row = cast(Dict[str, Any], account_row)
+            if account_row["is_frozen"]:
+                return jsonify({"success": False, "message": "Account is frozen"}), 403
+            
+            if account_row.get("is_deleted", 0):
+                return jsonify({"success": False, "message": "Account not found or not owned by user"}), 404
+                # check if account is deleted but not tell the user that its deleted to not expose potentially sensitive data
+            internal_account_id = account_row["id"]
+
+            # 5. Execute Updates
+            # Update User Last Claim
+            cur.execute("UPDATE users SET last_salary_claim = NOW() WHERE id = %s", (user_id,))
+            
+            import json
+            metadata = json.dumps({
+                "job_name": job_name,
+                "class_level": class_level
+            })
+            
+            # Log Transaction
+            # TODO: Add withdrawal from Treasury account in the future
+            cur.execute("""
+                INSERT INTO transactions (
+                    transaction_type, 
+                    to_account_id, 
+                    amount, 
+                    description,
+                    metadata,
+                    confirmed, 
+                    created_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, NOW())
+            """, ('salary', internal_account_id, salary_amount, 'Salary Payment', metadata, 1))
+            
+            transaction_id = cur.lastrowid
+            
+            # Update Balance
+            cur.execute("UPDATE bank_accounts SET balance = balance + %s WHERE id = %s", (salary_amount, internal_account_id))
+            
+            logger.verbose(f"User {user_id} claimed salary {salary_amount} to account {target_account_uuid}")
+            
+        except Exception as e:
+            logger.error(f"Salary claim failed for user {user_id}: {e}")
+            raise e # Reraise to trigger rollback
+            
+    return jsonify({
+        "success": True, 
+        "amount": salary_amount,
+        "transaction_id": transaction_id
     }), 200
