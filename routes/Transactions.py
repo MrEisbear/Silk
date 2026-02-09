@@ -38,7 +38,7 @@ def get_all_transactions(data):
 def get_transaction(data, tx_uuid):
     logger.verbose(f"Getting transaction data for {data['id']}")
     with db_helper.cursor() as cur:
-        cur.execute("SELECT uuid, transaction_type, from_account_id, to_account_id, amount, confirmed, created_at, description, metadata, tax_category FROM transactions WHERE uuid = %s", (tx_uuid))
+        cur.execute("SELECT uuid, transaction_type, from_account_id, to_account_id, amount, confirmed, created_at, description, metadata, tax_category FROM transactions WHERE uuid = %s", (tx_uuid,))
         row = cur.fetchone()
         return jsonify({"transaction": row}), 200
 
@@ -156,7 +156,7 @@ def make_payment(data):
     donor_uuid = req["from_account"]
     receiver_uuid = req["to_account"]
     description = req["description"]
-    tax_category = req["tax_category"]
+    tax_category = str(req["tax_category"])
 
     # Validate and parse amount as Decimal
     try:
@@ -179,7 +179,7 @@ def make_payment(data):
         try:
             # --- Validate donor account: must exist and be owned by user ---
             cur.execute("""
-                SELECT id, balance 
+                SELECT id, balance, is_frozen
                 FROM bank_accounts 
                 WHERE uuid = %s 
                   AND account_holder_type = 'user' 
@@ -200,7 +200,7 @@ def make_payment(data):
                 FROM bank_accounts 
                 WHERE uuid = %s
                   AND is_deleted = 0
-            """, (receiver_uuid, str(user_id)))
+            """, (receiver_uuid,))
             receiver_row = cur.fetchone()
             if receiver_row is None:
                 return jsonify({"error": "Receiver account not found"}), 404
@@ -208,7 +208,7 @@ def make_payment(data):
             receiver = cast(Dict[str, Any], receiver_row)
 
             
-            if donor["is_frozen"] | receiver["is_frozen"]:
+            if donor["is_frozen"] or receiver["is_frozen"]:
                 return jsonify({"error": "Account is frozen"}), 403
             # --- Record transaction (confirmed = 1 immediately) ---
             cur.execute("""
@@ -237,7 +237,7 @@ def make_payment(data):
             match tax_category:
                 case "1":
                     tax = Decimal(0.300) # 30% Tax, hardcoded until Government System
-                    tax_amount = amount - (amount * (1 + tax))
+                    tax_amount = (amount * (1 + tax)) - amount
                     cur.execute("""
                         INSERT INTO transactions (
                             transaction_type, 
@@ -247,16 +247,16 @@ def make_payment(data):
                             tax_category,
                             confirmed
                         ) VALUES (%s, %s, %s, %s, %s)
-                    """, ("tax", donor["id"], "1", tax_amount, tax_category, 1))
+                    """, ("tax", donor["id"], tax_amount, tax_category, 1))
                     tax_id = cur.lastrowid
                     cur.execute(
                         "UPDATE bank_accounts SET balance = balance - %s WHERE id = %s",
                         (tax_amount, donor["id"])
                     )
-                    cur.execute(
-                        "UPDATE bank_accounts SET balance = balance + %s WHERE id = %s",
-                        (tax_amount, "1")
-                    )
+                    # cur.execute(
+                    #    "UPDATE bank_accounts SET balance = balance + %s WHERE id = %s",
+                    #    (tax_amount, "1")
+                    #)
                 case _:
                     tax_id = ""
                     pass
