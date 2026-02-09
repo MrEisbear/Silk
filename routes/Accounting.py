@@ -145,6 +145,8 @@ def lookup_uuid(account_uuid):
         if acctype == "user":
             cur.execute("SELECT username FROM users WHERE id = %s",(holder,))
             row = cur.fetchone()
+            if not row:
+                return jsonify({"error": "Account not found"}), 404 
             user = cast(Dict[str, Any], row)
             holder = str(user["username"])
         elif acctype == "company":
@@ -162,7 +164,7 @@ def lookup_uuid(account_uuid):
 @bp.route("/public/<string:accnum>", methods=["GET"])
 def lookup_accnum(accnum):
     with db_helper.cursor() as cur:
-        cur.execute("SELECT balance, is_frozen, uuid, account_holder_id, account_holder_type FROM bank_accounts WHERE account_number  = %s", (accnum,))
+        cur.execute("SELECT balance, id, is_frozen, uuid, account_holder_id, account_holder_type FROM bank_accounts WHERE account_number  = %s", (accnum,))
         row = cur.fetchone()
         account = cast(Dict[str, Any], row)
         if not row or account["is_frozen"]:
@@ -176,6 +178,8 @@ def lookup_accnum(accnum):
         if acctype == "user":
             cur.execute("SELECT username FROM users WHERE id = %s",(holder,))
             row = cur.fetchone()
+            if not row:
+                return jsonify({"error": "Account not found"}), 404 
             user = cast(Dict[str, Any], row)
             holder = str(user["username"])
         elif acctype == "company":
