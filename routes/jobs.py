@@ -6,9 +6,9 @@ from typing import Dict, Any, cast
 from decimal import Decimal
 from datetime import datetime, timedelta
 
-bp_jobs = Blueprint("jobs", __name__, url_prefix="/api/jobs")
+bp = Blueprint("jobs", __name__, url_prefix="/api/jobs")
 
-@bp_jobs.route("/", methods=["GET"])
+@bp.route("/", methods=["GET"])
 @require_token
 def get_jobs(data):
     """
@@ -76,7 +76,7 @@ def get_jobs(data):
     }), 200
 
 # This route is a contribution by Google
-@bp_jobs.route("/claim", methods=["POST"])
+@bp.route("/claim", methods=["POST"])
 @require_token
 def claim_salary(data):
     user_id = data["id"]
