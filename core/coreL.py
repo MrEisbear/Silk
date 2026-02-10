@@ -7,6 +7,7 @@ import inspect
 class Logger:
     def __init__(self, name):
         self.name = name
+        self.mode: str = "INFO"
         self.module = False
         try:
             from colorama import Fore, Style, just_fix_windows_console
@@ -20,6 +21,7 @@ class Logger:
             self.module = False
 
         self.reset() # Resets the terminal colours to ensure everything is in correct colour
+        self.set_mode(self.mode)
 
     def version(self):
         return __version__
@@ -30,46 +32,46 @@ class Logger:
         else:
             print("\033[0m", end="")
 
-    def info(self, message):
+    def info(self, message: str) -> None:
         caller = inspect.stack()[1].filename.split("/")[-1].split(".")[0]
         print(f"[INFO] [{caller}] {message}")
 
-    def warning(self, message):
+    def warning(self, message: str) -> None:
         caller = inspect.stack()[1].filename.split("/")[-1].split(".")[0]
         if self.module:
             print(self.Fore.YELLOW + f"[WARNING] [{caller}] {message}" + self.Style.RESET_ALL)
         else:
             print(f"\033[33m[WARNING] [{caller}] {message}\033[0m")
 
-    def error(self, message):
+    def error(self, message: str) -> None:
         caller = inspect.stack()[1].filename.split("/")[-1].split(".")[0]
         if self.module:
             print(self.Fore.RED + f"[ERROR] [{caller}] {message}" + self.Style.RESET_ALL)
         else:
             print(f"\033[31m[ERROR] [{caller}] {message}\033[0m")
 
-    def debug(self, message):
+    def debug(self, message: str) -> None:
         caller = inspect.stack()[1].filename.split("/")[-1].split(".")[0]
         if self.module:
             print(self.Fore.BLUE + f"[DEBUG] [{caller}] {message}" + self.Style.RESET_ALL)
         else:    
             print(f"\033[34m[DEBUG] [{caller}] {message}\033[0m")
 
-    def verbose(self, message):
+    def verbose(self, message: str) -> None:
         caller = inspect.stack()[1].filename.split("/")[-1].split(".")[0]
         if self.module:
             print(self.Fore.MAGENTA + f"[VERBOSE] [{caller}] {message}" + self.Style.RESET_ALL)
         else:
             print(f"\033[35m[VERBOSE] [{caller}] {message}\033[0m")
 
-    def fatal(self, message):
+    def fatal(self, message: str) -> None:
         caller = inspect.stack()[1].filename.split("/")[-1].split(".")[0]
         if self.module:
             print(self.Fore.RED + self.Style.BRIGHT + f"[FATAL] [{caller}] {message}" + self.Style.RESET_ALL)
         else:
             print(f"\033[1;31m[FATAL] [{caller}] {message}\033[0m")
 
-    def set_mode(self, mode):
+    def set_mode(self, mode: str) -> None:
         mode = mode.upper()
         match mode:
             case "DEBUG":
