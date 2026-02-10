@@ -95,3 +95,45 @@ def require_token(func: Callable[..., Any]) -> Callable[..., Any]:
             )
             return jsonify({"error": "Invalid token"}), 401
     return wrapper
+
+def require_role(required_role: str) -> Callable[..., Any]:
+    """
+    Decorator to require a specific role ('admin' or 'mod').
+    - 'admin' requires role='admin'.
+    - 'mod' requires role='mod' OR 'admin'.
+    """
+    from functools import wraps
+    
+    def decorator(func):
+        @wraps(func)
+        @require_token # Use existing token check first
+        def wrapper(data, *args, **kwargs):
+            user_id = data.get("id")
+            if not user_id:
+                return jsonify({"error": "Unauthorized"}), 401
+                
+            from core.database import db_helper
+            
+            with db_helper.cursor() as cur:
+                # Check user role from DB to allow immediate revocation/promotion
+                cur.execute("SELECT role FROM users WHERE id = %s", (user_id,))
+                row = cur.fetchone()
+                
+                if not row:
+                     return jsonify({"error": "User not found"}), 404
+                
+                user_role = row.get("role", "user") # Default to user if null
+                
+                if required_role == "admin":
+                    if user_role != "admin":
+                        logger.warning(f"Access denied for user {user_id} (role: {user_role}) to admin resource")
+                        return jsonify({"error": "Forbidden: Admin access required"}), 403
+                        
+                elif required_role == "mod":
+                    if user_role not in ["admin", "mod"]:
+                        logger.warning(f"Access denied for user {user_id} (role: {user_role}) to mod resource")
+                        return jsonify({"error": "Forbidden: Moderator access required"}), 403
+                        
+            return func(data, *args, **kwargs)
+        return wrapper
+    return decorator

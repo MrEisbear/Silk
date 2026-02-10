@@ -1,5 +1,9 @@
 try:
     from core.logger import logger
+except (ImportError, ModuleNotFoundError) as e:
+    print(f"Failed to launch logger. Logger is required for this API. Is it installed?: {e}")
+    exit(1)
+try:
     from ruamel.yaml import YAML
     from core.coreC import Configure
     import dotenv
