@@ -1,11 +1,12 @@
 # Core Authentication
 
-from flask import Blueprint, redirect, request, jsonify
+from flask import Blueprint, redirect, request, jsonify, make_response, Response
 from core.coreAuthUtil import hash_password, check_password, create_jwt, require_token
 from core.database import db_helper
 from core.logger import logger
 from typing import cast, Dict, Any
 import os
+import secrets
 import requests
 from urllib.parse import urlencode
 
@@ -71,27 +72,35 @@ BASE_URL = os.getenv("FRONTEND_LINK")
 
 @bp.route("/discord", methods=["GET"])
 def discord_login():
+    state = secrets.token_urlsafe(16)
     params = {
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
         "response_type": "code",
         "scope": "identify email guilds guilds.members.read",
+        "state": state,
     }
-    url = f"https://discord.com/api/oauth2/authorize?{urlencode(params)}"
+    url = f"https://discord.com/oauth2/authorize?{urlencode(params)}"
     logger.verbose("New Discord login request...")
-    return redirect(url)
+    resp = redirect(url)
+    resp.set_cookie("discord_oauth_state", state, httponly=True, samesite="Lax", max_age=300)
+    return resp
 
 @bp.route("/discord/link", methods=["GET"])
 def discord_link():
+    state = secrets.token_urlsafe(16)
     params = {
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
         "response_type": "code",
         "scope": "identify email guilds guilds.members.read",
+        "state": state,
     }
-    url = f"https://discord.com/api/oauth2/authorize?{urlencode(params)}"
+    url = f"https://discord.com/oauth2/authorize?{urlencode(params)}"
     logger.verbose("New Discord link request...")
-    return redirect(url)
+    resp = redirect(url)
+    resp.set_cookie("discord_oauth_state", state, httponly=True, samesite="Lax", max_age=300)
+    return resp
 
 @bp.route("/discord/callback")
 def discord_callback():
@@ -99,6 +108,14 @@ def discord_callback():
         logger.error("Base URL missing in .env file!")
         return redirect("http://brickrigs.de/login?err=500")
     logger.verbose("Recieved discord call back...")
+    
+    # Check CSRF State
+    cookie_state = request.cookies.get("discord_oauth_state")
+    req_state = request.args.get("state")
+    if not cookie_state or not req_state or cookie_state != req_state:
+        logger.warning("Discord login CSRF State Mismatch/Missing!")
+        return redirect(BASE_URL + "/login?err=403")
+
     code = request.args.get("code")
     if not code:
         logger.verbose("Discord callback had no auth code")
@@ -137,6 +154,12 @@ def discord_callback():
     discord_user = user_resp.json()
     if not discord_user:
         return redirect(BASE_URL + "/login?err=400")
+        
+    # Security: Verify Email
+    if not discord_user.get("verified", False):
+         logger.warning(f"Discord user {discord_user.get('username')} tried to login with unverified email.")
+         return redirect(BASE_URL + "/login?err=403")
+         
     discord_id = discord_user["id"]
     email = discord_user.get("email")
     username = discord_user["username"]

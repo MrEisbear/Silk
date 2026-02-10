@@ -8,8 +8,9 @@ try:
     from core.coreC import Configure
     import dotenv
     from flask import Flask
+    from werkzeug.middleware.proxy_fix import ProxyFix
 except (ImportError, ModuleNotFoundError) as e:
-    print(f"Failed to import module: {e}")
+    logger.fatal(f"Failed to import modules: {e}")
     exit(1)
 # Start the App
 

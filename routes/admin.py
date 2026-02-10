@@ -1,3 +1,4 @@
+# ruff: noqa
 from flask import Blueprint, jsonify, request
 from core.coreAuthUtil import require_token, require_role
 from core.database import db_helper
@@ -7,6 +8,7 @@ import secrets
 import string
 import json
 from whenever import Instant, hours
+from decimal import Decimal
 
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
 
@@ -30,10 +32,11 @@ def create_system_giftcard(data):
         return jsonify({"error": "Missing amount"}), 400
         
     amount = req["amount"]
+    amount = req["amount"]
     try:
-        amount = float(amount)
+        amount = Decimal(str(amount))
         if amount <= 0: raise ValueError
-    except ValueError:
+    except (ValueError, TypeError, ArithmeticError):
         return jsonify({"error": "Invalid amount"}), 400
 
     code = gen_giftcode()
@@ -165,9 +168,10 @@ def adjust_balance(data, user_id):
     account_uuid = req.get("account_uuid") 
     
     amount = req["amount"]
+    amount = req["amount"]
     try:
-        amount = float(amount)
-    except ValueError:
+        amount = Decimal(str(amount))
+    except (ValueError, TypeError, ArithmeticError):
         return jsonify({"error": "Invalid amount"}), 400
         
     reason = req.get("reason", "Admin Adjustment")
@@ -192,7 +196,7 @@ def adjust_balance(data, user_id):
                 return jsonify({"error": "User has no bank account"}), 404
                 
             acc_id = account["id"]
-            new_balance = float(account["balance"]) + amount
+            new_balance = Decimal(str(account["balance"])) + amount
             
             if new_balance < 0:
                  return jsonify({"error": "Insufficient funds for deduction"}), 400
