@@ -9,6 +9,7 @@ __pycache__/
 # Scripts
 scripts/
 tests/
+.vscode/
 
 # Distribution / packaging
 .Python
