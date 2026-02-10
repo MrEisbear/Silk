@@ -1,7 +1,7 @@
 # Core configuration for SilkC system
 # DO NOT CHANGE THIS
 name: SilkCore
-version: 1.0-alpha
+version: 1.0.1-alpha
 frontend_version: 1.0-alpha
 config_version: 1.0-indev
 

@@ -33,7 +33,7 @@ dotenv.load_dotenv(env)
 from core.database import db_helper
 #Create the flask app and start the database
 app = Flask(__name__)
-
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 # Set CORS
 from flask_cors import CORS
 CORS(app, origins=["https://brickrigs.de"], supports_credentials=True)
