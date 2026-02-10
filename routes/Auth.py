@@ -177,7 +177,7 @@ def discord_callback():
     # Issue JWT
     token = create_jwt(internal_user_id)
     logger.verbose(f"Discord user {discord_id} authenticated as internal user {internal_user_id}")
-    return redirect(BASE_URL + "/dash" f"?token={token}")
+    return redirect(BASE_URL + "/dashboard" f"?token={token}")
 
 @bp.route("/change-password", methods=["POST"])
 @require_token
