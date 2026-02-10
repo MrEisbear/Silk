@@ -21,7 +21,6 @@ class Logger:
             self.module = False
 
         self.reset() # Resets the terminal colours to ensure everything is in correct colour
-        self.set_mode(self.mode)
 
     def version(self):
         return __version__

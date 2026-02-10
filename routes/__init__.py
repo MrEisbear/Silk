@@ -16,3 +16,12 @@ def register_blueprints(app):
         if isinstance(bp, Blueprint):
             app.register_blueprint(bp)
             logger.verbose(f"Registered blueprint: {module_name}")
+
+def initStatus():
+    try:
+        from core.coreS import get_version_internal
+    except (ImportError, ModuleNotFoundError):
+        logger.error("Failed to show Status. Is StatusModule installed?")
+        return
+    get_version_internal()
+    return

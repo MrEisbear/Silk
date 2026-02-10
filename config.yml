@@ -1,12 +1,13 @@
 # Core configuration for SilkC system
 # DO NOT CHANGE THIS
 name: SilkCore
-version: 1.0-indev
+version: 1.0-alpha
+frontend_version: 1.0-alpha
 config_version: 1.0-indev
 
 # System-wide settings
 environment:
-  log_level: INFO
+  log_level: VERBOSE
   # Options for log level:
   # INFO displays only important messages and user friendly information such has fatal errors and steps to solve
   # DEBUG displays all messages including debug information useful for developers
