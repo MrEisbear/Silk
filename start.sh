@@ -118,6 +118,7 @@ case "$1" in
     console)
         # This is the magic command to attach to another user's screen
         echo "🔌 Attaching to console... (Press Ctrl+A, then D to detach)"
+        sudo -u $APP_USER env SCREENDIR=/run/screen/S-$APP_USER screen -d $SCREEN_NAME > /dev/null
         sudo -u $APP_USER env SCREENDIR=/run/screen/S-$APP_USER screen -r $SCREEN_NAME
 		;;
         
