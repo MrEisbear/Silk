@@ -53,6 +53,11 @@ def create_user_accounts(data):
             logger.error(f"Failed to create Bank Account for {user_id}. attempted accnum = {accnum}")
             return jsonify({"error": "Failed to create bank account"}), 500
         try:
+            cur.execute("SELECT COUNT(*) as count FROM bank_accounts WHERE account_holder_id = %s AND account_holder_type = 'user'", (user_id,))
+            result = cur.fetchone()
+            if result and int(cast(dict[str, int], result)["count"]) >= 3:
+                return {"error": "Maximum account limit reached, contact support to create additional accounts."}, 400
+            
             cur.execute("INSERT INTO bank_accounts (account_number, account_holder_type, account_holder_id) VALUES (%s, %s, %s)", (accnum, 'user', user_id,))
         except Exception as e:
             logger.error(e)
