@@ -268,3 +268,17 @@ def create_job_definition(data):
         
     logger.verbose(f"Admin {data['id']} created job {req['job_name']}")
     return jsonify({"success": True, "id": new_id, "message": "Job created"}), 201
+
+@bp.route("/verify_user/<int:user_id>", methods=["POST"])
+@require_role("admin")
+def verify_user(data, user_id):
+    """
+    Verify a user (set is_verified = 1).
+    """
+    admin_id = data["id"]
+    with db_helper.cursor() as cur:
+        cur.execute("UPDATE users SET is_verified = 1 WHERE id = %s", (user_id,))
+        if cur.rowcount == 0:
+             return jsonify({"error": "User not found"}), 404
+    logger.verbose(f"Admin {admin_id} verified user {user_id}")
+    return jsonify({"success": True, "message": "User verified"}), 200
