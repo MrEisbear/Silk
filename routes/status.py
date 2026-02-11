@@ -24,5 +24,5 @@ def get_status() -> ResponseReturnValue:
         logger.fatal("Config file is missing version or frontend_version!")
         abort(500)
     return {"latency": "Unknown",
-            "version": version,
-            "frontend_version": frontend_version}, 200
+            "version": str(version),
+            "frontend_version": str(frontend_version)}, 200
