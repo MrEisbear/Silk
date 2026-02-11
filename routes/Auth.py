@@ -34,8 +34,8 @@ def register():
             return jsonify({"error": "User already exists"}), 409
 
         cur.execute("""
-            INSERT INTO users (uuid, username, email, password_hash, manual)
-            VALUES (UUID(), %s, %s, %s, TRUE)
+            INSERT INTO users (uuid, username, email, password_hash, last_login, manual)
+            VALUES (UUID(), %s, %s, %s, NOW(), TRUE)
         """, (username, email, hash_password(password)))
     
     logger.verbose(f"User sucessfully registered! {username}")
@@ -52,14 +52,14 @@ def login():
     with db_helper.cursor() as cur:
         cur.execute("SELECT id, password_hash FROM users WHERE email=%s", (email,))
         raw = cur.fetchone()
-        user = cast(Dict[str, Any], raw) if raw else None
+        user = cast(dict[str, Any], raw) if raw else None
 
         if not user or not check_password(password, user["password_hash"]):
             logger.verbose("Login failed due to invalid credentials; 401")
             return jsonify({"error": "Invalid credentials"}), 401
-
-        token = create_jwt(user["id"])
-        logger.verbose("Logged user with id " + str(user["id"]) + "in!")
+        cur.execute("UPDATE users SET last_login = NOW() WHERE id = %s", (user["id"]))
+    token = create_jwt(user["id"])
+    logger.verbose("Logged user with id " + str(user["id"]) + "in!")
     return jsonify({"token": token})
 
 # Discord Authentication
@@ -196,6 +196,7 @@ def discord_callback():
                     logger.error("Failed to retrieve last inserted ID")
                     return redirect(BASE_URL + "/login?err=500")
                 internal_user_id: int = int(raw_id)
+        cur.execute("UPDATE users SET last_login = NOW() WHERE id = %s", (internal_user_id,))
 
     # Issue JWT
     token = create_jwt(internal_user_id)
