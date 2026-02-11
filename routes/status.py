@@ -23,6 +23,7 @@ def get_status() -> ResponseReturnValue:
     if version is None or frontend_version is None:
         logger.fatal("Config file is missing version or frontend_version!")
         abort(500)
+    logger.verbose("Status API called")
     return {"latency": "Unknown",
             "version": str(version),
             "frontend_version": str(frontend_version)}, 200
