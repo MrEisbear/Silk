@@ -9,6 +9,8 @@ import requests
 from urllib.parse import urlencode
 from decimal import Decimal, InvalidOperation
 import secrets
+from ua_parser import user_agent_parser
+import simplejson as json
 from base64 import b64decode
 
 bp = Blueprint("pay", __name__, url_prefix="/api/pay")
@@ -108,6 +110,15 @@ def issue_SP_token():
             if not any(d in webhook for d in allowed_list):
                 return jsonify({"error": "Webhook domain not allowed"}), 400
         
+        raw_ua = request.headers.get("User-Agent", "")
+        parsed_ua = user_agent_parser.Parse(raw_ua)
+        ua_data = json.dumps({
+            "browser": parsed_ua['user_agent']['family'],
+            "version": parsed_ua['user_agent']['major'],
+            "os": parsed_ua['os']['family'],
+            "device": parsed_ua['device']['family']})
+
+
         try:
             cur.execute("""
             INSERT INTO tokens (
@@ -132,7 +143,7 @@ def issue_SP_token():
             webhook,
             expires_at,
             request.remote_addr,
-            request.headers.get("User-Agent"),))
+            ua_data))
         except Exception as e:
             logger.fatal("Saving Token failed")
             logger.debug(f"Traceback: {e}")

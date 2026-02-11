@@ -6,7 +6,7 @@ from core.logger import logger
 from typing import Dict, Any, cast
 import secrets
 import string
-import json
+import simplejson as json
 from whenever import Instant, hours
 from decimal import Decimal
 

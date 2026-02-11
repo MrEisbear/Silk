@@ -154,7 +154,7 @@ def claim_salary(data):
             # Update User Last Claim
             cur.execute("UPDATE users SET last_salary_claim = NOW() WHERE id = %s", (user_id,))
             
-            import json
+            import simplejson as json
             metadata = json.dumps({
                 "job_name": job_name,
                 "class_level": class_level
