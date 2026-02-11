@@ -1,3 +1,6 @@
+from gevent import monkey
+monkey.patch_all()
+
 try:
     from core.logger import logger
 except (ImportError, ModuleNotFoundError) as e:
@@ -13,7 +16,6 @@ except (ImportError, ModuleNotFoundError) as e:
     logger.fatal(f"Failed to import modules: {e}")
     exit(1)
 # Start the App
-
 # Load Configurator Util
 try:
     config = Configure("config.yml")
@@ -22,8 +24,7 @@ except FileNotFoundError:
     exit(1)
 
 # Set Logger Mode with help of the config
-print(config.get("environment", "log_level"))
-logger.set_mode(config.get("environment", "log_level"))
+logger.set_mode(str(config.get_str("environment", "log_level")))
 
 # Load dotenv with config or default (.env)
 env = config.get("environment", "env_file")

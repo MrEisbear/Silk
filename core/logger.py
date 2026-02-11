@@ -2,3 +2,4 @@
 from core.coreL import Logger
 
 logger: Logger = Logger("Silk")
+logger.warn = logger.warning
