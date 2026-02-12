@@ -98,12 +98,6 @@ case "$1" in
         
         echo "✅ API stopped and screen session terminated."
         ;;
-
-    restart)
-        $0 stop
-        sleep 2
-        $0 start
-        ;;
         
     status)
         if check_status; then
@@ -115,12 +109,31 @@ case "$1" in
         fi
         ;;
 
+	reload)
+        # THE ZERO-DOWNTIME WAY
+        MASTER_PID=$(pgrep -u $APP_USER -o -f 'gunicorn.*main:app')
+        if [ -n "$MASTER_PID" ]; then
+            echo "♻️  Performing Reload..."
+            kill -HUP $MASTER_PID
+            echo "✅ New workers started. Old workers will drain and exit."
+        else
+            echo "❌ API not found. Try 'start'."
+        fi
+        ;;
+
+    restart)
+        # Note: This still causes downtime. Use 'reload' for code updates.
+        $0 stop
+        sleep 2
+        $0 start
+        ;;
+
     console)
-        # This is the magic command to attach to another user's screen
-        echo "🔌 Attaching to console... (Press Ctrl+A, then D to detach)"
-        sudo -u $APP_USER env SCREENDIR=/run/screen/S-$APP_USER screen -d $SCREEN_NAME > /dev/null
-        sudo -u $APP_USER env SCREENDIR=/run/screen/S-$APP_USER screen -r $SCREEN_NAME
-		;;
+        echo "🔌 Attaching to console... (Ctrl+A, D to detach)"
+        # Force a refresh of the screen buffer to ensure you see new logs
+        sudo -u $APP_USER screen -S $SCREEN_NAME -X eval "stuff \014" 
+        sudo -u $APP_USER screen -r $SCREEN_NAME
+        ;;
         
     *)
         echo "Usage: $0 {start|stop|restart|status|console}"
