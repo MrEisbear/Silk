@@ -50,14 +50,26 @@ def login():
     password = data.get("password")
 
     with db_helper.cursor() as cur:
-        cur.execute("SELECT id, password_hash FROM users WHERE email=%s", (email,))
+        cur.execute("SELECT id, password_hash, is_banned FROM users WHERE email=%s", (email,))
         raw = cur.fetchone()
         user = cast(dict[str, Any], raw) if raw else None
 
-        if not user or not check_password(password, user["password_hash"]):
+        if not user:
+            logger.verbose("Login failed: User not found; 401")
+            return jsonify({"error": "Invalid credentials"}), 401
+
+        if user.get("is_banned"):
+            logger.verbose(f"Login failed: User {user['id']} is banned; 403")
+            return jsonify({"error": "This account has been banned"}), 403
+
+        if user["password_hash"] is None:
+            logger.verbose(f"Login failed: User {user['id']} has no password set; 401")
+            return jsonify({"error": "Invalid credentials"}), 401
+
+        if not check_password(password, user["password_hash"]):
             logger.verbose("Login failed due to invalid credentials; 401")
             return jsonify({"error": "Invalid credentials"}), 401
-        cur.execute("UPDATE users SET last_login = NOW() WHERE id = %s", (user["id"]))
+        cur.execute("UPDATE users SET last_login = NOW() WHERE id = %s", (user["id"],))
     token = create_jwt(user["id"])
     logger.verbose("Logged user with id " + str(user["id"]) + "in!")
     return jsonify({"token": token})
@@ -168,10 +180,13 @@ def discord_callback():
         logger.verbose(f"{username} did not grand email permission, callback denied.")
         return redirect(BASE_URL + "/login?err=400")
     with db_helper.cursor() as cur:
-        cur.execute("SELECT id FROM users WHERE discord_id = %s", (discord_id,))
+        cur.execute("SELECT id, is_banned FROM users WHERE discord_id = %s", (discord_id,))
         raw_row = cur.fetchone()
         if raw_row is not None:
             row = cast(Dict[str, Any], raw_row)
+            if row.get("is_banned"):
+                logger.warning(f"Banned user {row['id']} tried to login via Discord.")
+                return redirect(BASE_URL + "/login?err=403")
             try:
                 internal_user_id = int(row["id"])
             except (ValueError, TypeError, KeyError):
@@ -179,10 +194,13 @@ def discord_callback():
                 return redirect(BASE_URL + "/login?err=500")
         else:
             # Insert new user
-            cur.execute("SELECT id FROM users WHERE email = %s", (email,))
+            cur.execute("SELECT id, is_banned FROM users WHERE email = %s", (email,))
             existing_user = cur.fetchone()
             existing_user = cast(Dict[str, Any], existing_user)
             if existing_user:
+                if existing_user.get("is_banned"):
+                    logger.warning(f"Banned user {existing_user['id']} tried to link Discord via existing email.")
+                    return redirect(BASE_URL + "/login?err=403")
                 internal_user_id = int(existing_user["id"])
                 cur.execute("UPDATE users SET discord_id = %s WHERE id = %s", (discord_id, internal_user_id,))
                 logger.verbose(f"Linked existing email {email} to new discord_id {discord_id}")
