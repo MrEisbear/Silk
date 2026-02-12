@@ -5,6 +5,7 @@ from core.logger import logger
 from typing import Dict, Any, cast
 import os
 from decimal import Decimal
+import simplejson as json
 
 bp = Blueprint("transactions", __name__, url_prefix="/api/bank")
 
@@ -238,16 +239,20 @@ def make_payment(data):
                 case "1":
                     tax = Decimal(0.300) # 30% Tax, hardcoded until Government System
                     tax_amount = (amount * (1 + tax)) - amount
+
+                    description = str(f"30% Tax - ID: {transaction_id}")
+                    metadata = json.dumps({"tax": tax, "tax_amount": tax_amount, "tax_category": tax_category, "transaction_id": transaction_id})
                     cur.execute("""
                         INSERT INTO transactions (
                             transaction_type, 
-                            from_account_id, 
-                            to_account_id, 
+                            from_account_id,
                             amount,
                             tax_category,
+                            description,
+                            metadata,
                             confirmed
-                        ) VALUES (%s, %s, %s, %s, %s)
-                    """, ("tax", donor["id"], tax_amount, tax_category, 1))
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """, ("tax", donor["id"], tax_amount, tax_category, description, metadata, 1))
                     tax_id = cur.lastrowid
                     cur.execute(
                         "UPDATE bank_accounts SET balance = balance - %s WHERE id = %s",
