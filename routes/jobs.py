@@ -7,7 +7,6 @@ from typing import Any, cast
 from decimal import Decimal
 from datetime import datetime, timedelta
 from typing import dict as Dict
-
 bp = Blueprint("jobs", __name__, url_prefix="/api/jobs")
 
 @bp.route("/", methods=["GET"])

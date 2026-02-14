@@ -1,9 +1,9 @@
 import importlib
 import pkgutil
-from flask import Blueprint
+from flask import Blueprint, Flask
 from core.logger import logger
 
-def register_blueprints(app):
+def register_blueprints(app: Flask) -> None:
     package_name = __name__
     package = importlib.import_module(package_name)
 
