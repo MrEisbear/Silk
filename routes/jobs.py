@@ -2,13 +2,16 @@ from flask import Blueprint, jsonify, request
 from core.coreAuthUtil import require_token
 from core.database import db_helper
 from core.logger import logger
-from typing import Dict, Any, cast
+from core.limiter import limiter
+from typing import Any, cast
 from decimal import Decimal
 from datetime import datetime, timedelta
+from typing import dict as Dict
 
 bp = Blueprint("jobs", __name__, url_prefix="/api/jobs")
 
 @bp.route("/", methods=["GET"])
+@limiter.limit("1/2second")
 @require_token
 def get_jobs(data):
     """

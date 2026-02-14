@@ -43,6 +43,10 @@ CORS(app, origins=["https://brickrigs.de"], supports_credentials=True)
 from routes import register_blueprints, initStatus
 initStatus()
 register_blueprints(app)
+# Initialize Rate Limiter
+from core.limiter import init_limiter
+init_limiter(app)
+
 logger.info("App started!")
 if __name__ == "__main__":
     app.teardown_appcontext(db_helper.close_db)
