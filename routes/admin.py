@@ -3,7 +3,7 @@ from flask import Blueprint, jsonify, request
 from core.coreAuthUtil import require_token, require_role
 from core.database import db_helper
 from core.logger import logger
-from typing import Dict, Any, cast
+from typing import  Any, cast
 import secrets
 import string
 import simplejson as json
@@ -80,7 +80,8 @@ def get_user_jobs(data, user_id):
         user = cur.fetchone()
         if not user:
              return jsonify({"error": "User not found"}), 404
-        
+        user = cast(dict[str, Any], user)
+
         user_uuid = user["uuid"]
 
         # Fetch jobs
@@ -112,6 +113,7 @@ def assign_user_job(data, user_id):
         user = cur.fetchone()
         if not user:
              return jsonify({"error": "User not found"}), 404
+        user = cast(dict[str, Any], user)
         user_uuid = user["uuid"]
         
         # Verify Job exists
@@ -140,6 +142,7 @@ def remove_user_job(data, user_id, job_id):
         user = cur.fetchone()
         if not user:
              return jsonify({"error": "User not found"}), 404
+        user = cast(dict[str, Any], user)
         user_uuid = user["uuid"]
         
         cur.execute("DELETE FROM user_jobs WHERE user_uuid = %s AND job_id = %s", (user_uuid, job_id))
@@ -194,7 +197,7 @@ def adjust_balance(data, user_id):
             
             if not account:
                 return jsonify({"error": "User has no bank account"}), 404
-                
+            account = cast(dict[str, Any], account)
             acc_id = account["id"]
             new_balance = Decimal(str(account["balance"])) + amount
             

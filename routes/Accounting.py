@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, request
 from core.coreAuthUtil import require_token, hash_pin
 from core.database import db_helper
 from core.logger import logger
-from typing import Dict, Any, cast
+from typing import  Any, cast
 import os
 from core.coreRandUtil import generate_account_number
 
@@ -29,7 +29,7 @@ def create_user_accounts(data):
     with db_helper.cursor() as cur:
         cur.execute("SELECT * FROM users WHERE id = %s", (user_id,))
         row = cur.fetchone()
-        user = cast(Dict[str, Any], row)
+        user = cast(dict[str, Any], row)
         discord_id = user["discord_id"]
         if discord_id == None:
             type = "M-"
@@ -60,7 +60,7 @@ def create_user_accounts(data):
             
             cur.execute("INSERT INTO bank_accounts (account_number, account_holder_type, account_holder_id) VALUES (%s, %s, %s)", (accnum, 'user', user_id,))
         except Exception as e:
-            logger.error(e)
+            logger.error(str(e))
             return jsonify({"error": "Failed to create bank account"}), 500
     logger.verbose(f"Bank Account created for {user_id}; {accnum}")
     return jsonify({"account_number": accnum}), 201
@@ -76,7 +76,7 @@ def retrieve_acc_details(data, account_uuid):
         row = cur.fetchone()
         if not row:
             return jsonify({"error": "Account not found"}), 404
-        account = cast(Dict[str, Any], row)
+        account = cast(dict[str, Any], row)
         if int(account["account_holder_id"]) != user_id:
             return jsonify({"error": "Account not found"}), 404
         return jsonify({
@@ -103,7 +103,7 @@ def update_acc_details(data, account_uuid):
             row = cur.fetchone()
             if not row:
                 return jsonify({"error": "Account not found"}), 404
-            account = cast(Dict[str, Any], row)
+            account = cast(dict[str, Any], row)
             if account["account_holder_id"] != user_id:
                 return jsonify({"error": "Account not found"}), 404
             cur.execute("UPDATE bank_accounts SET is_frozen = %s WHERE uuid = %s", (freeze, account_uuid))
@@ -119,7 +119,7 @@ def update_acc_details(data, account_uuid):
             row = cur.fetchone()
             if not row:
                 return jsonify({"error": "Account not found"}), 404
-            account = cast(Dict[str, Any], row)
+            account = cast(dict[str, Any], row)
             if int(account["account_holder_id"]) != int(user_id):
                 return jsonify({"error": "Account not found"}), 404
             if str(account["account_holder_type"]) != "user":
@@ -139,7 +139,7 @@ def lookup_uuid(account_uuid):
     with db_helper.cursor() as cur:
         cur.execute("SELECT balance, id, is_frozen, account_number, account_holder_id, account_holder_type FROM bank_accounts WHERE uuid = %s", (account_uuid,))
         row = cur.fetchone()
-        account = cast(Dict[str, Any], row)
+        account = cast(dict[str, Any], row)
         if not row or account["is_frozen"]:
             return jsonify({"error": "Account not found"}), 404
         account_number = account["account_number"]
@@ -152,7 +152,7 @@ def lookup_uuid(account_uuid):
             row = cur.fetchone()
             if not row:
                 return jsonify({"error": "Account not found"}), 404 
-            user = cast(Dict[str, Any], row)
+            user = cast(dict[str, Any], row)
             holder = str(user["username"])
         elif acctype == "company":
             # to be implemented
@@ -171,7 +171,7 @@ def lookup_accnum(accnum):
     with db_helper.cursor() as cur:
         cur.execute("SELECT balance, id, is_frozen, uuid, account_holder_id, account_holder_type FROM bank_accounts WHERE account_number  = %s", (accnum,))
         row = cur.fetchone()
-        account = cast(Dict[str, Any], row)
+        account = cast(dict[str, Any], row)
         if not row or account["is_frozen"]:
             return jsonify({"error": "Account not found"}), 404
         logger.verbose(f"Retrieving public info from {account['uuid']}...")
@@ -185,7 +185,7 @@ def lookup_accnum(accnum):
             row = cur.fetchone()
             if not row:
                 return jsonify({"error": "Account not found"}), 404 
-            user = cast(Dict[str, Any], row)
+            user = cast(dict[str, Any], row)
             holder = str(user["username"])
         elif acctype == "company":
             # to be implemented

@@ -6,7 +6,6 @@ from core.limiter import limiter
 from typing import Any, cast
 from decimal import Decimal
 from datetime import datetime, timedelta
-from typing import dict as Dict
 bp = Blueprint("jobs", __name__, url_prefix="/api/jobs")
 
 @bp.route("/", methods=["GET"])
@@ -26,7 +25,7 @@ def get_jobs(data):
         if not user_row:
             logger.error(f"User with id {user_id} not found tho Token exists?")
             return jsonify({"error": "User not found"}), 404
-        user_row = cast(Dict[str, Any], user_row)
+        user_row = cast(dict[str, Any], user_row)
         user_uuid = user_row["uuid"]
         last_claim = user_row["last_salary_claim"]
 
@@ -53,7 +52,7 @@ def get_jobs(data):
             "next_claim_at": None
         }), 200
 # Since we ordered by amount DESC, the first one is the highest
-    max_salary_job = cast(Dict[str, Any], jobs[0])
+    max_salary_job = cast(dict[str, Any], jobs[0])
     daily_pay = max_salary_job["daily_amount"]
     max_class = max_salary_job["class_level"]
 
@@ -99,7 +98,7 @@ def claim_salary(data):
             if not user_row:
                 return jsonify({"success": False, "message": "User not found"}), 404
             
-            user_row = cast(Dict[str, Any], user_row)
+            user_row = cast(dict[str, Any], user_row)
             user_uuid = user_row["uuid"]
             last_claim = user_row["last_salary_claim"]
             
@@ -128,7 +127,7 @@ def claim_salary(data):
             if not job_row:
                  return jsonify({"success": False, "message": "Jobless"}), 400
                  
-            job_row = cast(Dict[str, Any], job_row)
+            job_row = cast(dict[str, Any], job_row)
             salary_amount = job_row["daily_amount"]
             job_name = job_row["job_name"]
             class_level = job_row["class_level"]
@@ -143,7 +142,7 @@ def claim_salary(data):
             if not account_row:
                 return jsonify({"success": False, "message": "Account not found or not owned by user"}), 404
             
-            account_row = cast(Dict[str, Any], account_row)
+            account_row = cast(dict[str, Any], account_row)
             if account_row["is_frozen"]:
                 return jsonify({"success": False, "message": "Account is frozen"}), 403
             

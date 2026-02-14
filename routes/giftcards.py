@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, request
 from core.coreAuthUtil import require_token
 from core.database import db_helper
 from core.logger import logger
-from typing import Dict, Any, cast
+from typing import Any, cast
 import os
 from decimal import Decimal
 import simplejson as json
@@ -34,7 +34,7 @@ def redeem_giftcard(data):
         row = cur.fetchone()
         if not row:
             return jsonify({"error": "Giftcard not found"}), 404
-        giftcard = cast(Dict[str, Any], row)
+        giftcard = cast(dict[str, Any], row)
         amount = giftcard["amount"]
         is_active = int(giftcard["is_active"])
         if is_active != 1:
@@ -75,7 +75,7 @@ def redeem_giftcard(data):
         row = cur.fetchone()
         if not row:
             return jsonify({"error": "Account not found"}), 404
-        account = cast(Dict[str, Any], row)
+        account = cast(dict[str, Any], row)
         balance = account["balance"]
 
         holder = account["account_holder_id"]
@@ -153,7 +153,7 @@ def create_giftcard(data):
         row = cur.fetchone()
         if not row:
             return jsonify({"error": "Account not found"}), 404
-        account = cast(Dict[str, Any], row)
+        account = cast(dict[str, Any], row)
         money = account["balance"]
         holder = account["account_holder_id"]
         acc_id = account["id"]

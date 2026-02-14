@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, request
 from core.coreAuthUtil import require_token
 from core.database import db_helper
 from core.logger import logger
-from typing import Dict, Any, cast
+from typing import dict, Any, cast
 import os
 from decimal import Decimal
 import simplejson as json
@@ -26,7 +26,7 @@ def get_all_transactions(data):
         row = cur.fetchone()
         if not row:
             return jsonify({"error": "Account not found"}), 404
-        parse = cast(Dict[str, Any], row)
+        parse = cast(dict[str, Any], row)
         if int(parse["account_holder_id"]) != int(user_id):
             return jsonify({"error": "Account not found"}), 404
         cur.execute("SELECT uuid, transaction_type, from_account_id, to_account_id, amount, confirmed, created_at, description, metadata, tax_category FROM transactions WHERE to_account_id = %s OR from_account_id = %s", (account_id, account_id,))
@@ -87,7 +87,7 @@ def transfer(data):
             if donor_row is None:
                 return jsonify({"error": "Donor account not found or not owned"}), 404
 
-            donor = cast(Dict[str, Any], donor_row)
+            donor = cast(dict[str, Any], donor_row)
             if donor["balance"] < amount:
                 return jsonify({"error": "Insufficient funds"}), 402
 
@@ -104,7 +104,7 @@ def transfer(data):
             if receiver_row is None:
                 return jsonify({"error": "Receiver account not found or not owned"}), 404
 
-            receiver = cast(Dict[str, Any], receiver_row)
+            receiver = cast(dict[str, Any], receiver_row)
             if receiver["is_frozen"] | donor["is_frozen"]:
                 return jsonify({"error": "Account is frozen"}), 403
             # --- Record transaction (confirmed = 1 immediately) ---
@@ -191,7 +191,7 @@ def make_payment(data):
             if donor_row is None:
                 return jsonify({"error": "Donor account not found or not owned"}), 404
 
-            donor = cast(Dict[str, Any], donor_row)
+            donor = cast(dict[str, Any], donor_row)
             if donor["balance"] < final_amount:
                 return jsonify({"error": "Insufficient funds"}), 402
 
@@ -206,7 +206,7 @@ def make_payment(data):
             if receiver_row is None:
                 return jsonify({"error": "Receiver account not found"}), 404
 
-            receiver = cast(Dict[str, Any], receiver_row)
+            receiver = cast(dict[str, Any], receiver_row)
 
             
             if donor["is_frozen"] or receiver["is_frozen"]:

@@ -2,7 +2,7 @@ from flask import Blueprint, redirect, request, jsonify
 from core.coreAuthUtil import require_token
 from core.database import db_helper
 from core.logger import logger
-from typing import cast, Dict, Any
+from typing import cast, dict, Any
 import os
 import requests
 from urllib.parse import urlencode, urlparse
@@ -19,7 +19,7 @@ def me(data):
         if not row:
             logger.verbose("User not found; 404")
             return jsonify({"error": "User not found"}), 404
-        user = cast(Dict[str, Any], row)
+        user = cast(dict[str, Any], row)
         logger.verbose(f"Information retrieved from {user_id}")
         return jsonify({
             "uuid": user["uuid"],
@@ -89,7 +89,7 @@ def public_profile(user_uuid):
         row = cur.fetchone()
         if not row:
             return jsonify({"error": "User not found"}), 404
-        user = cast(Dict[str, Any], row)
+        user = cast(dict[str, Any], row)
         logger.verbose(f"user {user['username']} requested from {ip}")
         return jsonify({
             "uuid": str(user_uuid),
@@ -108,7 +108,7 @@ def public_profile_id(userid):
         row = cur.fetchone()
         if not row:
             return jsonify({"error": "User not found"}), 404
-        user = cast(Dict[str, Any], row)
+        user = cast(dict[str, Any], row)
         logger.verbose(f"user {user['username']} requested from {ip}")
         return jsonify({
             "uuid": str(user["uuid"]),

@@ -4,7 +4,7 @@ from flask import Blueprint, redirect, request, jsonify, make_response, Response
 from core.coreAuthUtil import hash_password, check_password, create_jwt, require_token
 from core.database import db_helper
 from core.logger import logger
-from typing import cast, Dict, Any
+from typing import cast, Any
 import os
 import secrets
 import requests
@@ -183,7 +183,7 @@ def discord_callback():
         cur.execute("SELECT id, is_banned FROM users WHERE discord_id = %s", (discord_id,))
         raw_row = cur.fetchone()
         if raw_row is not None:
-            row = cast(Dict[str, Any], raw_row)
+            row = cast(dict[str, Any], raw_row)
             if row.get("is_banned"):
                 logger.warning(f"Banned user {row['id']} tried to login via Discord.")
                 return redirect(BASE_URL + "/login?err=403")
@@ -196,7 +196,7 @@ def discord_callback():
             # Insert new user
             cur.execute("SELECT id, is_banned FROM users WHERE email = %s", (email,))
             existing_user = cur.fetchone()
-            existing_user = cast(Dict[str, Any], existing_user)
+            existing_user = cast(dict[str, Any], existing_user)
             if existing_user:
                 if existing_user.get("is_banned"):
                     logger.warning(f"Banned user {existing_user['id']} tried to link Discord via existing email.")
@@ -240,7 +240,7 @@ def change_password(data):
             logger.verbose("Password not changed due to missing user; 404")
             return jsonify({"error": "User not found"}), 404
 
-        user = cast(Dict[str, Any], row)
+        user = cast(dict[str, Any], row)
         password_hash = user["password_hash"]
         is_manual = bool(user["manual"])
 
