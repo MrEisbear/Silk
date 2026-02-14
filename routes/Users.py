@@ -2,7 +2,7 @@ from flask import Blueprint, redirect, request, jsonify
 from core.coreAuthUtil import require_token
 from core.database import db_helper
 from core.logger import logger
-from typing import cast, dict, Any
+from typing import cast, Any
 import os
 import requests
 from urllib.parse import urlencode, urlparse

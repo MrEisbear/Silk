@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, request
 from core.coreAuthUtil import require_token
 from core.database import db_helper
 from core.logger import logger
-from typing import dict, Any, cast
+from typing import Any, cast
 import os
 from decimal import Decimal
 import simplejson as json
