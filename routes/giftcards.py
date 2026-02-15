@@ -146,7 +146,10 @@ def create_giftcard(data):
         return jsonify({"error": "Missing required fields"}), 400
 
     source_acc = req["source_account"]
-    amount = req["amount"]
+    try:
+        amount = Decimal(str(req["amount"]))
+    except:
+        return jsonify({"error": "Invalid amount"}), 400
     
     with db_helper.cursor() as cur:
         cur.execute("SELECT * FROM bank_accounts WHERE uuid = %s", (source_acc,))

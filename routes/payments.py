@@ -1,9 +1,10 @@
+from posix import TMP_MAX
 from flask import Blueprint, redirect, request, jsonify
 from core.coreAuthUtil import hash_password, check_password, create_jwt, require_token, hash_pin, check_pin
 from core.database import db_helper
 from whenever import Instant, minutes
 from core.logger import logger
-from typing import cast, Dict, Any, Tuple, Callable
+from typing import cast, Any, Callable
 import os
 import requests
 from urllib.parse import urlencode
@@ -29,7 +30,7 @@ def issue_SP_token():
     # Verify Amount Decimal(19,3)
     amount = req["amount"]
     try:
-        amount = Decimal(amount)
+        amount = Decimal(str(amount))
         if amount <= 0:
             return jsonify({"error": "Amount must be positive"}), 400
         if amount.quantize(Decimal("0.001")) != amount:
@@ -52,17 +53,17 @@ def issue_SP_token():
         row = cur.fetchone()
         if not row:
             return jsonify({"error": "Account not found"}), 404
-        sender = cast(Dict[str, Any], row)
+        sender = cast(dict[str, Any], row)
         if sender["pin_locked_until"] is not None:
-            now = Instant.now()
-            if now.py_datetime() < sender["pin_locked_until"]:
+            locked_until = Instant.from_timestamp(sender["pin_locked_until"].timestamp())
+            if Instant.now() < locked_until:
                 return jsonify({"error": "Account is locked"}), 403
         if not sender["pin_hash"]:
             return jsonify({"error": "PIN not set"}), 400
         if not check_pin(pin, sender["uuid"], sender["pin_hash"]):
             attempts = sender["pin_failed_attempts"] + 1
             if attempts >= 3:
-                cur.execute("UPDATE bank_accounts SET pin_locked_until = DATE_ADD(NOW(), INTERVAL 15 MINUTES) WHERE uuid = %s", (sender["uuid"],))
+                cur.execute("UPDATE bank_accounts SET pin_locked_until = DATE_ADD(NOW(), INTERVAL 15 MINUTE) WHERE uuid = %s", (sender["uuid"],))
             else: 
                 cur.execute("UPDATE bank_accounts SET pin_failed_attempts = %s WHERE uuid = %s", (attempts, sender["uuid"],))
             return jsonify({"error": "Invalid PIN"}), 401
@@ -75,7 +76,7 @@ def issue_SP_token():
         row = cur.fetchone()
         if not row:
             return jsonify({"error": "Account not found"}), 404
-        reciever = cast(Dict[str, Any], row)
+        reciever = cast(dict[str, Any], row)
         if int(sender["is_frozen"]) != 0 or int(reciever["is_frozen"]) != 0:
             return jsonify({"error": "Account is frozen"}), 403
         if int(sender["is_deleted"]) != 0 or int(reciever["is_deleted"]) != 0:
@@ -96,7 +97,7 @@ def issue_SP_token():
             try:
                 webhook = b64decode(webhook_b64).decode("utf-8")
             except Exception as e:
-                logger.fatal(e)
+                logger.fatal(str(e))
                 return jsonify({"error": "Internal Server Error"}), 500
         else:
             webhook = None
@@ -117,8 +118,10 @@ def issue_SP_token():
             "version": parsed_ua['user_agent']['major'],
             "os": parsed_ua['os']['family'],
             "device": parsed_ua['device']['family']})
-
-
+        
+        tax = int(req["tax"])
+        if tax < 0 or tax > 30:
+            return jsonify({"error": "Invalid Tax Category."}), 400
         try:
             cur.execute("""
             INSERT INTO tokens (
@@ -138,7 +141,7 @@ def issue_SP_token():
             sender_uuid,
             req["recipient_uuid"],
             amount,
-            req["tax"],
+            tax,
             label,
             webhook,
             expires_at,
@@ -149,3 +152,13 @@ def issue_SP_token():
             logger.debug(f"Traceback: {e}")
             return jsonify({"error": "Internal Server Error"}), 500
     return jsonify({"token": token, "expires": expires_at.isoformat()}), 201
+
+@bp.route("/issue", methods=["POST"])
+def issue_payment():
+    """
+    Issues a payment to a bank account with their UUID using a bank account from a authenticated user.
+    """
+    logger.verbose("Payment is being issued...")
+    req = request.get_json()
+    
+    return {"error": "Not implemented"}, 501

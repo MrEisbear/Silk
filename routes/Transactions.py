@@ -169,7 +169,7 @@ def make_payment(data):
 
     match tax_category:
         case "1":
-            tax = Decimal(0.300) # 30% Tax, hardcoded until Government System
+            tax = Decimal("0.300") # 30% Tax, hardcoded until Government System
             final_amount = amount * (1 + tax)
         case _:
             final_amount = amount
@@ -237,7 +237,7 @@ def make_payment(data):
 
             match tax_category:
                 case "1":
-                    tax = Decimal(0.300) # 30% Tax, hardcoded until Government System
+                    tax = Decimal("0.300") # 30% Tax, hardcoded until Government System
                     tax_amount = (amount * (1 + tax)) - amount
 
                     description = str(f"30% Tax - ID: {transaction_id}")
