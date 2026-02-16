@@ -3,12 +3,13 @@ from flask import Blueprint, jsonify, request
 from core.coreAuthUtil import require_token, require_role
 from core.database import db_helper
 from core.logger import logger
-from typing import  Any, cast
+from typing import Any, cast
 import secrets
 import string
 import simplejson as json
 from whenever import Instant, hours
 from decimal import Decimal
+from core.limiter import limiter
 
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
 
@@ -285,3 +286,21 @@ def verify_user(data, user_id):
              return jsonify({"error": "User not found"}), 404
     logger.verbose(f"Admin {admin_id} verified user {user_id}")
     return jsonify({"success": True, "message": "User verified"}), 200
+
+@bp.route("/is-admin", methods=["GET"])
+@limiter.limit("1/5second")
+@require_token
+def is_admin(data):
+    user_id = data.get("id")
+    if not user_id:
+        return {"error": "User ID not found"}, 400
+    with db_helper.cursor() as cur:
+        cur.execute("SELECT role FROM users WHERE id = %s", (user_id,))
+        row = cur.fetchone()
+        if not row:
+            return {"error": "User not found"}, 404
+        row = cast(dict[str, Any], row)
+        role = row["role"]
+        if not role:
+            role = "user"
+    return {"role": role}, 200 
