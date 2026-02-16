@@ -97,9 +97,9 @@ def get_user_jobs(data, user_id):
     return jsonify({"username": user["username"], "jobs": jobs}), 200
 
 
-@bp.route("/users/<int:user_id>/jobs", methods=["POST"])
+@bp.route("/users/<uuid:user_uuid>/jobs", methods=["POST"])
 @require_role("mod")
-def assign_user_job(data, user_id):
+def assign_user_job(data, user_uuid):
     """Assign a job to a user"""
     req = request.get_json()
     if not req or "job_id" not in req:
@@ -108,14 +108,6 @@ def assign_user_job(data, user_id):
     job_id = req["job_id"]
     
     with db_helper.cursor() as cur:
-        # Get user UUID
-        cur.execute("SELECT uuid FROM users WHERE id = %s", (user_id,))
-        user = cur.fetchone()
-        if not user:
-             return jsonify({"error": "User not found"}), 404
-        user = cast(dict[str, Any], user)
-        user_uuid = user["uuid"]
-        
         # Verify Job exists
         cur.execute("SELECT id FROM jobs WHERE id = %s", (job_id,))
         if not cur.fetchone():
@@ -129,27 +121,20 @@ def assign_user_job(data, user_id):
         # Assign
         cur.execute("INSERT INTO user_jobs (user_uuid, job_id) VALUES (%s, %s)", (user_uuid, job_id))
         
-    logger.verbose(f"Mod {data['id']} assigned job {job_id} to user {user_id}")
+    logger.verbose(f"Mod {data['id']} assigned job {job_id} to user {user_uuid}")
     return jsonify({"success": True, "message": "Job assigned"}), 201
 
 
-@bp.route("/users/<int:user_id>/jobs/<int:job_id>", methods=["DELETE"])
+@bp.route("/users/<uuid:user_uuid>/jobs/<int:job_id>", methods=["DELETE"])
 @require_role("mod") # Assuming mods can also remove jobs
-def remove_user_job(data, user_id, job_id):
+def remove_user_job(data, user_uuid, job_id):
     """Remove a job from a user"""
     with db_helper.cursor() as cur:
-        cur.execute("SELECT uuid FROM users WHERE id = %s", (user_id,))
-        user = cur.fetchone()
-        if not user:
-             return jsonify({"error": "User not found"}), 404
-        user = cast(dict[str, Any], user)
-        user_uuid = user["uuid"]
-        
         cur.execute("DELETE FROM user_jobs WHERE user_uuid = %s AND job_id = %s", (user_uuid, job_id))
         if cur.rowcount == 0:
              return jsonify({"error": "Job assignment not found"}), 404
              
-    logger.verbose(f"Mod {data['id']} removed job {job_id} from user {user_id}")
+    logger.verbose(f"Mod {data['id']} removed job {job_id} from user {user_uuid}")
     return jsonify({"success": True, "message": "Job removed"}), 200
 
 # --- ADMIN ROUTES (Balance, Data Mangement) ---
@@ -246,6 +231,13 @@ def delete_user(data, user_id):
     logger.verbose(f"Admin {admin_id} banned user {user_id}")
     return jsonify({"success": True, "message": "User banned"}), 200
 
+@bp.route("/jobs", methods=["GET"])
+@require_role("mod")
+def lookup_jobs(data):
+    with db_helper.cursor() as cur:
+        cur.execute("SELECT * FROM jobs")
+        jobs = cur.fetchall()
+        return jsonify(jobs), 200
 
 @bp.route("/jobs", methods=["POST"])
 @require_role("admin")

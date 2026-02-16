@@ -4,7 +4,7 @@ import bcrypt, jwt
 from whenever import Instant, hours
 from flask import request, jsonify
 import os
-from typing import Any, Callable
+from typing import Any, Callable, cast
 from core.logger import logger
 import hashlib
 
@@ -80,8 +80,31 @@ def require_token(func: Callable[..., Any]) -> Callable[..., Any]:
         try:
             data = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
             user_id = data.get("id", "unknown")
+
+            # Validate against DB (Check Ban Status & Update Role)
+            from core.database import db_helper
+            with db_helper.cursor() as cur:
+                # We check for is_banned AND fetch role/username to optimize downstream calls
+                cur.execute("SELECT id, role, is_banned, username FROM users WHERE id = %s", (user_id,))
+                # Cast to dict because generic stubs don't know about dictionary=True
+                user = cast(dict[str, Any] | None, cur.fetchone())
+
+                if not user:
+                    logger.verbose(f"Token valid but user {user_id} not found in DB")
+                    return jsonify({"error": "User not found"}), 401
+
+                if user.get("is_banned"):
+                    logger.warning(f"Banned user {user_id} attempted access")
+                    return jsonify({"error": "Account is banned"}), 403
+
+                # Merge DB data into token data for efficient role checking
+                # Token data has 'iat', 'exp'; DB has 'role', 'is_banned', etc.
+                # DB data overrides token data if collision (unlikely except 'id')
+                user_data = dict(data)
+                user_data.update(user) 
+
             logger.verbose(f"User {user_id} successfully authenticated from {ip} | UA: {user_agent}")
-            return func(data, *args, **kwargs)
+            return func(user_data, *args, **kwargs)
 
         except jwt.ExpiredSignatureError:
             logger.verbose(
@@ -106,33 +129,38 @@ def require_role(required_role: str) -> Callable[..., Any]:
     
     def decorator(func):
         @wraps(func)
-        @require_token # Use existing token check first
+        @require_token # Use existing token check first (which now populates role!)
         def wrapper(data, *args, **kwargs):
             user_id = data.get("id")
             if not user_id:
                 return jsonify({"error": "Unauthorized"}), 401
-                
-            from core.database import db_helper
             
-            with db_helper.cursor() as cur:
-                # Check user role from DB to allow immediate revocation/promotion
-                cur.execute("SELECT role FROM users WHERE id = %s", (user_id,))
-                row = cur.fetchone()
-                
-                if not row:
-                     return jsonify({"error": "User not found"}), 404
-                
-                user_role = row.get("role", "user") # Default to user if null
-                
-                if required_role == "admin":
-                    if user_role != "admin":
-                        logger.warning(f"Access denied for user {user_id} (role: {user_role}) to admin resource")
-                        return jsonify({"error": "Forbidden: Admin access required"}), 403
-                        
-                elif required_role == "mod":
-                    if user_role not in ["admin", "mod"]:
-                        logger.warning(f"Access denied for user {user_id} (role: {user_role}) to mod resource")
-                        return jsonify({"error": "Forbidden: Moderator access required"}), 403
+            # Role should be populated by require_token, but fallback if needed
+            user_role = data.get("role")
+            
+            if user_role is None:
+                # Fallback to DB check (only happens if require_token didn't do its job or logic changed)
+                from core.database import db_helper
+                with db_helper.cursor() as cur:
+                    cur.execute("SELECT role FROM users WHERE id = %s", (user_id,))
+                    row = cast(dict[str, Any] | None, cur.fetchone())
+                    if not row:
+                         return jsonify({"error": "User not found"}), 404
+                    user_role = row.get("role", "user")
+
+            # Normalize role
+            if not user_role: 
+                user_role = "user"
+            
+            if required_role == "admin":
+                if user_role != "admin":
+                    logger.warning(f"Access denied for user {user_id} (role: {user_role}) to admin resource")
+                    return jsonify({"error": "Forbidden: Admin access required"}), 403
+                    
+            elif required_role == "mod":
+                if user_role not in ["admin", "mod"]:
+                    logger.warning(f"Access denied for user {user_id} (role: {user_role}) to mod resource")
+                    return jsonify({"error": "Forbidden: Moderator access required"}), 403
                         
             return func(data, *args, **kwargs)
         return wrapper
