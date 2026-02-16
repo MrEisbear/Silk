@@ -33,7 +33,6 @@ def create_system_giftcard(data):
         return jsonify({"error": "Missing amount"}), 400
         
     amount = req["amount"]
-    amount = req["amount"]
     try:
         amount = Decimal(str(amount))
         if amount <= 0: raise ValueError
