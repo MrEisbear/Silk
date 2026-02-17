@@ -7,7 +7,7 @@ import os
 from decimal import Decimal
 import simplejson as json
 
-bp = Blueprint("transactions", __name__, url_prefix="/api/bank")
+bp = Blueprint("bank", __name__, url_prefix="/api/bank")
 
 
 @bp.route("/view-transactions", methods=["POST"])
