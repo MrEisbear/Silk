@@ -166,6 +166,33 @@ def lookup_uuid(account_uuid):
         "id": acc_id,
     }), 200
 
+@bp.route("/public/<int:acc_id>", methods=["GET"])
+def lookup_id(acc_id: int):
+    with db_helper.cursor() as cur:
+        cur.execute("""
+            SELECT 
+                b.account_number,
+                CASE
+                    WHEN b.account_holder_type = 'user' THEN u.username
+                    WHEN b.account_holder_type = 'gov' THEN 'Gov Entity'
+                    WHEN b.account_holder_type = 'company' THEN 'Company'
+                    ELSE 'Unknown'
+                END AS holder
+            FROM bank_accounts b
+            LEFT JOIN users u
+                ON b.account_holder_type = 'user'
+                AND u.id = CAST(b.account_holder_id AS UNSIGNED)
+            WHERE b.id = %s
+              AND b.is_deleted = 0
+            LIMIT 1
+        """, (acc_id,))
+
+        row = cur.fetchone()
+        if not row:
+            return {"error": "Account not found"}, 404
+    result = cast(dict[str, Any], row)
+    return result, 200
+        
 @bp.route("/public/<string:accnum>", methods=["GET"])
 def lookup_accnum(accnum):
     with db_helper.cursor() as cur:
