@@ -82,6 +82,7 @@ def retrieve_acc_details(data, account_uuid):
         return jsonify({
             "balance": account["balance"],
             "account_number": account["account_number"],
+            "id": account["id"],
             "created_at": account["created_at"].isoformat() if account["created_at"] else None,
             "updated_at": account["updated_at"].isoformat() if account["updated_at"] else None,
             "is_frozen": account["is_frozen"]
