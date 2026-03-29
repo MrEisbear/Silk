@@ -37,11 +37,54 @@ def get_all_transactions(data):
 @bp.route("/view-transactions/<uuid:tx_uuid>", methods=["GET"])
 @require_token
 def get_transaction(data, tx_uuid):
-    logger.verbose(f"Getting transaction data for {data['id']}")
+    user_id = data.get("id")
+    user_role = data.get("role")
+    logger.verbose(f"Getting transaction data for {user_id}")
+
     with db_helper.cursor() as cur:
-        cur.execute("SELECT uuid, transaction_type, from_account_id, to_account_id, amount, confirmed, created_at, description, metadata, tax_category FROM transactions WHERE uuid = %s", (tx_uuid,))
+        # Join with bank_accounts to check ownership for authorization
+        cur.execute("""
+            SELECT
+                t.uuid, t.transaction_type, t.from_account_id, t.to_account_id,
+                t.amount, t.confirmed, t.created_at, t.description, t.metadata, t.tax_category,
+                fa.account_holder_id AS from_holder_id,
+                fa.account_holder_type AS from_holder_type,
+                ta.account_holder_id AS to_holder_id,
+                ta.account_holder_type AS to_holder_type
+            FROM transactions t
+            LEFT JOIN bank_accounts fa ON t.from_account_id = fa.id
+            LEFT JOIN bank_accounts ta ON t.to_account_id = ta.id
+            WHERE t.uuid = %s
+        """, (str(tx_uuid),))
         row = cur.fetchone()
-        return jsonify({"transaction": row}), 200
+
+        if not row:
+            return jsonify({"error": "Transaction not found"}), 404
+
+        transaction = cast(dict[str, Any], row)
+
+        # Security: Authorization check
+        # - Involved parties (sender/recipient) can view
+        # - Staff (admin/mod) can view
+        # - Transactions involving government accounts are public
+        is_involved = False
+        if transaction["from_holder_type"] == "user" and int(transaction["from_holder_id"]) == int(user_id):
+            is_involved = True
+        elif transaction["to_holder_type"] == "user" and int(transaction["to_holder_id"]) == int(user_id):
+            is_involved = True
+
+        is_staff = user_role in ["admin", "mod"]
+        is_public = (transaction["from_holder_type"] == "gov" or transaction["to_holder_type"] == "gov" or transaction["transaction_type"] == "tax")
+
+        if not (is_involved or is_staff or is_public):
+            logger.warning(f"Unauthorized transaction access attempt by user {user_id} for TX {tx_uuid}")
+            return jsonify({"error": "Transaction not found"}), 404
+
+        # Remove internal helper fields before returning
+        for key in ["from_holder_id", "from_holder_type", "to_holder_id", "to_holder_type"]:
+            transaction.pop(key, None)
+
+        return jsonify({"transaction": transaction}), 200
 
 @bp.route("/transactions", methods=["POST"])
 @require_token
