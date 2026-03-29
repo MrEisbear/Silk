@@ -200,6 +200,10 @@ def require_permission(permission_key: str):
                     # single query: get ALL permissions (user + jobs)
                     cur.execute("""
                     WITH RECURSIVE job_tree AS (
+                        SELECT 1 as job_id
+
+                        UNION
+
                         SELECT uj.job_id
                         FROM user_jobs uj
                         WHERE uj.user_uuid = (SELECT uuid FROM users WHERE id = %s)

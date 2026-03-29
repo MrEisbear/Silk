@@ -131,7 +131,6 @@ def update_acc_details(data, account_uuid):
     else:
         return jsonify({"error": "Invalid JSON"}), 400
 
-
 # Public Acc lookup
 @bp.route("/public/<uuid:account_uuid>", methods=["GET"])
 def lookup_uuid(account_uuid):
@@ -195,7 +194,7 @@ def lookup_id(acc_id: int):
     return result, 200
         
 @bp.route("/public/<string:accnum>", methods=["GET"])
-def lookup_accnum(accnum):
+def lookup_accnum(accnum: str):
     with db_helper.cursor() as cur:
         cur.execute("SELECT balance, id, is_frozen, uuid, account_holder_id, account_holder_type FROM bank_accounts WHERE account_number  = %s", (accnum,))
         row = cur.fetchone()
@@ -208,18 +207,32 @@ def lookup_accnum(accnum):
         acc_id = account["id"]
         holder = account["account_holder_id"]
         acctype = str(account["account_holder_type"])
-        if acctype == "user":
-            cur.execute("SELECT username FROM users WHERE id = %s",(holder,))
-            row = cur.fetchone()
-            if not row:
-                return jsonify({"error": "Account not found"}), 404 
-            user = cast(dict[str, Any], row)
-            holder = str(user["username"])
-        elif acctype == "company":
-            # to be implemented
-            holder = "Unknown Company"
-        else:
-            holder = "Unknown Company"
+        match acctype:
+            case "user":
+                cur.execute("SELECT username FROM users WHERE id = %s",(holder,))
+                row = cur.fetchone()
+                if not row:
+                    return jsonify({"error": "Account not found"}), 404 
+                user = cast(dict[str, Any], row)
+                holder = str(user["username"])
+            case "company":
+                # to be implemented
+                holder = "Unknown Company"
+            case "gov":
+                holder = "Regierung"
+                match accnum:
+                    case "G-10091a4":
+                        holder = "Allgemeine Staatskasse"
+                    case "G-4003854":
+                        holder = "Andere"
+                    case "G-3006707":
+                        holder = "Strafgelder"
+                    case "G-200a869":
+                        holder = "Steuern"
+                    case _:
+                        pass
+            case _:
+                holder = "Unknown Company"
     return jsonify({
         "account_uuid": account_uuid,
         "balance": balance,
