@@ -1,6 +1,8 @@
 # Core Auth Utilities
 
 import bcrypt, jwt
+from core.coreCache import redis_client
+import json
 from whenever import Instant, hours
 from flask import request, jsonify
 import os
@@ -118,6 +120,129 @@ def require_token(func: Callable[..., Any]) -> Callable[..., Any]:
             )
             return jsonify({"error": "Invalid token"}), 401
     return wrapper
+
+def require_permission(permission_key: str):
+    from functools import wraps
+
+    def match_score(pattern: str, required: str) -> int | None:
+        """
+        Returns specificity score if pattern matches required.
+        Higher = more specific.
+        Supports wildcards properly (no length trap).
+        """
+        p_parts = pattern.split(".")
+        r_parts = required.split(".")
+
+        score = 0
+
+        for i, p in enumerate(p_parts):
+            if p == "*":
+                return score  # wildcard matches rest (any depth)
+
+            if i >= len(r_parts) or p != r_parts[i]:
+                return None
+
+            score += 1  # exact match increases specificity
+
+        # Only enforce equal length if NO wildcard was used
+        if len(p_parts) != len(r_parts):
+            return None
+
+        return score
+
+    def has_permission(user_permissions: set[str], required: str) -> bool:
+        best_allow = -1
+        best_deny = -1
+
+        for perm in user_permissions:
+            is_deny = perm.startswith("!")
+            clean = perm[1:] if is_deny else perm
+
+            score = match_score(clean, required)
+            if score is None:
+                continue
+
+            if is_deny:
+                best_deny = max(best_deny, score)
+            else:
+                best_allow = max(best_allow, score)
+
+        # nothing matched
+        if best_allow == -1 and best_deny == -1:
+            return False
+
+        # more specific wins
+        if best_deny > best_allow:
+            return False
+        if best_allow > best_deny:
+            return True
+
+        # same specificity → deny wins
+        return best_allow != -1 and best_deny == -1
+
+    def decorator(func):
+        @wraps(func)
+        @require_token
+        def wrapper(data, *args, **kwargs):
+            user_id = data.get("id")
+            if not user_id:
+                return jsonify({"error": f"Missing permission: {permission_key}"}), 403
+            cache_key = f"perm:{user_id}"
+
+            cached = cast(str | None, redis_client.get(cache_key))
+
+            if cached:
+                permissions = set(json.loads(cached))
+            else:
+                from core.database import db_helper
+
+                with db_helper.cursor() as cur:
+                    # single query: get ALL permissions (user + jobs)
+                    cur.execute("""
+                    WITH RECURSIVE job_tree AS (
+                        SELECT uj.job_id
+                        FROM user_jobs uj
+                        WHERE uj.user_uuid = (SELECT uuid FROM users WHERE id = %s)
+
+                        UNION ALL
+
+                        SELECT j.parent_job_id
+                        FROM jobs j
+                        JOIN job_tree jt ON j.id = jt.job_id
+                        WHERE j.parent_job_id IS NOT NULL
+                    )
+
+                    SELECT p.permission_key
+                    FROM permissions p
+                    WHERE p.id IN (
+                        -- job permissions (including inherited)
+                        SELECT jp.permission_id
+                        FROM job_permissions jp
+                        WHERE jp.job_id IN (SELECT job_id FROM job_tree)
+
+                        UNION
+
+                        -- direct user permissions
+                        SELECT permission_id
+                        FROM user_permissions
+                        WHERE user_uuid = (SELECT uuid FROM users WHERE id = %s)
+                    )
+                    """, (user_id, user_id))
+                    
+                    from typing import TypedDict
+
+                    class PermissionRow(TypedDict):
+                        permission_key: str
+                    rows = cast(list[PermissionRow], cur.fetchall())
+                    permissions = {row["permission_key"] for row in rows}
+                redis_client.setex(cache_key, 600, json.dumps(list(permissions)))
+            if not has_permission(permissions, permission_key):
+                return jsonify({"error": f"Missing permission: {permission_key}"}), 403
+            return func(data, *args, **kwargs)
+
+        return wrapper
+    return decorator
+    
 
 def require_role(required_role: str) -> Callable[..., Any]:
     """
