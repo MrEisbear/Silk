@@ -38,9 +38,36 @@ def get_all_transactions(data):
 @require_token
 def get_transaction(data, tx_uuid):
     logger.verbose(f"Getting transaction data for {data['id']}")
+    user_id = str(data.get("id"))
+    role = data.get("role", "user")
+
     with db_helper.cursor() as cur:
-        cur.execute("SELECT uuid, transaction_type, from_account_id, to_account_id, amount, confirmed, created_at, description, metadata, tax_category FROM transactions WHERE uuid = %s", (tx_uuid,))
+        # Authorization check:
+        # 1. User is Admin or Mod
+        # 2. User owns source or destination account
+        # 3. Source or destination account is 'gov' (public)
+        query = """
+            SELECT t.uuid, t.transaction_type, t.from_account_id, t.to_account_id,
+                   t.amount, t.confirmed, t.created_at, t.description, t.metadata, t.tax_category
+            FROM transactions t
+            LEFT JOIN bank_accounts sa ON t.from_account_id = sa.id
+            LEFT JOIN bank_accounts da ON t.to_account_id = da.id
+            WHERE t.uuid = %s
+              AND (
+                  %s IN ('admin', 'mod')
+                  OR (sa.account_holder_type = 'user' AND sa.account_holder_id = %s)
+                  OR (da.account_holder_type = 'user' AND da.account_holder_id = %s)
+                  OR sa.account_holder_type = 'gov'
+                  OR da.account_holder_type = 'gov'
+              )
+        """
+        cur.execute(query, (str(tx_uuid), role, user_id, user_id))
         row = cur.fetchone()
+
+        if not row:
+            # Return 404 to avoid leaking existence of transactions the user cannot see
+            return jsonify({"error": "Transaction not found"}), 404
+
         return jsonify({"transaction": row}), 200
 
 @bp.route("/transactions", methods=["POST"])
