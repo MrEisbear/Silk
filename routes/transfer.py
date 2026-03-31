@@ -37,11 +37,38 @@ def get_all_transactions(data):
 @bp.route("/view-transactions/<uuid:tx_uuid>", methods=["GET"])
 @require_token
 def get_transaction(data, tx_uuid):
-    logger.verbose(f"Getting transaction data for {data['id']}")
+    user_id, user_role = data.get("id"), data.get("role", "user")
+    logger.verbose(f"Getting transaction data for user {user_id}, tx {tx_uuid}")
+
     with db_helper.cursor() as cur:
-        cur.execute("SELECT uuid, transaction_type, from_account_id, to_account_id, amount, confirmed, created_at, description, metadata, tax_category FROM transactions WHERE uuid = %s", (tx_uuid,))
+        # Avoid SELECT * to prevent over-exposure of internal fields.
+        query = """
+            SELECT
+                t.uuid, t.transaction_type, t.from_account_id, t.to_account_id,
+                t.amount, t.confirmed, t.created_at, t.description, t.metadata, t.tax_category,
+                fa.account_holder_id AS from_holder, ta.account_holder_id AS to_holder
+            FROM transactions t
+            LEFT JOIN bank_accounts fa ON t.from_account_id = fa.id
+            LEFT JOIN bank_accounts ta ON t.to_account_id = ta.id
+            WHERE t.uuid = %s
+        """
+        cur.execute(query, (str(tx_uuid),))
         row = cur.fetchone()
-        return jsonify({"transaction": row}), 200
+        if not row:
+            return jsonify({"error": "Transaction not found"}), 404
+
+        tx = cast(dict[str, Any], row)
+        # Auth check: Participant or Admin/Mod. Return 404 on failure to prevent ID enumeration.
+        is_owner = str(tx.get("from_holder")) == str(user_id) or str(tx.get("to_holder")) == str(user_id)
+        if not is_owner and user_role not in ["admin", "mod"]:
+            logger.warning(f"Unauthorized access to tx {tx_uuid} by user {user_id}")
+            return jsonify({"error": "Transaction not found"}), 404
+
+        # Return explicit list of fields to maintain the original API contract
+        res = {k: tx[k] for k in ["uuid", "transaction_type", "from_account_id", "to_account_id", "amount", "confirmed", "created_at", "description", "metadata", "tax_category"]}
+        if res.get("created_at") and hasattr(res["created_at"], "isoformat"):
+            res["created_at"] = res["created_at"].isoformat()
+        return jsonify({"transaction": res}), 200
 
 @bp.route("/transactions", methods=["POST"])
 @require_token
