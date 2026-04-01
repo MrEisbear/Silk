@@ -37,10 +37,36 @@ def get_all_transactions(data):
 @bp.route("/view-transactions/<uuid:tx_uuid>", methods=["GET"])
 @require_token
 def get_transaction(data, tx_uuid):
-    logger.verbose(f"Getting transaction data for {data['id']}")
+    """
+    Retrieves transaction details. Prevents IDOR by verifying that the user
+    is the sender, recipient, an admin/mod, or a party to a public (gov) account.
+    """
+    user_id, role = str(data["id"]), data.get("role", "user")
     with db_helper.cursor() as cur:
-        cur.execute("SELECT uuid, transaction_type, from_account_id, to_account_id, amount, confirmed, created_at, description, metadata, tax_category FROM transactions WHERE uuid = %s", (tx_uuid,))
-        row = cur.fetchone()
+        # Fetch transaction along with sender/recipient holder info for authorization
+        cur.execute("""
+            SELECT t.uuid, t.transaction_type, t.from_account_id, t.to_account_id,
+                   t.amount, t.confirmed, t.created_at, t.description, t.metadata, t.tax_category,
+                   f.account_holder_id AS f_id, f.account_holder_type AS f_type,
+                   r.account_holder_id AS r_id, r.account_holder_type AS r_type
+            FROM transactions t
+            LEFT JOIN bank_accounts f ON t.from_account_id = f.id
+            LEFT JOIN bank_accounts r ON t.to_account_id = r.id
+            WHERE t.uuid = %s
+        """, (str(tx_uuid),))
+        row = cast(dict[str, Any] | None, cur.fetchone())
+        if not row:
+            return jsonify({"error": "Transaction not found"}), 404
+
+        # Authorization: requester must be sender, recipient, admin/mod, or transaction must involve gov
+        if not (role in ["admin", "mod"] or row["f_type"] == "gov" or row["r_type"] == "gov" or
+                (row["f_type"] == "user" and str(row["f_id"]) == user_id) or
+                (row["r_type"] == "user" and str(row["r_id"]) == user_id)):
+            logger.warning(f"IDOR attempt on transaction {tx_uuid} by user {user_id}")
+            return jsonify({"error": "Transaction not found"}), 404
+
+        # Remove internal authorization fields before returning
+        for k in ["f_id", "f_type", "r_id", "r_type"]: row.pop(k, None)
         return jsonify({"transaction": row}), 200
 
 @bp.route("/transactions", methods=["POST"])
