@@ -37,10 +37,22 @@ def get_all_transactions(data):
 @bp.route("/view-transactions/<uuid:tx_uuid>", methods=["GET"])
 @require_token
 def get_transaction(data, tx_uuid):
-    logger.verbose(f"Getting transaction data for {data['id']}")
+    """
+    Retrieves specific transaction details.
+    Accessible by any authenticated user who knows the UUID.
+    """
+    logger.verbose(f"Transaction data for {tx_uuid} requested by user {data['id']}")
     with db_helper.cursor() as cur:
-        cur.execute("SELECT uuid, transaction_type, from_account_id, to_account_id, amount, confirmed, created_at, description, metadata, tax_category FROM transactions WHERE uuid = %s", (tx_uuid,))
+        # Explicit column selection to prevent unintended information leakage
+        cur.execute("""
+            SELECT uuid, transaction_type, from_account_id, to_account_id,
+                   amount, confirmed, created_at, description, metadata, tax_category
+            FROM transactions
+            WHERE uuid = %s
+        """, (str(tx_uuid),))
         row = cur.fetchone()
+        if not row:
+            return jsonify({"error": "Transaction not found"}), 404
         return jsonify({"transaction": row}), 200
 
 @bp.route("/transactions", methods=["POST"])
