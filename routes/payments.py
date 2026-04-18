@@ -156,9 +156,212 @@ def issue_SP_token():
 @bp.route("/issue", methods=["POST"])
 def issue_payment():
     """
-    Issues a payment to a bank account with their UUID using a bank account from a authenticated user.
+    Executes a pre-authorized payment using a Single Pay Token.
     """
-    logger.verbose("Payment is being issued...")
+    logger.verbose("Payment is being issued via token...")
     req = request.get_json()
     
-    return {"error": "Not implemented"}, 501
+    if not req or "token" not in req:
+        return jsonify({"error": "Missing token"}), 400
+        
+    token_str = req["token"]
+    
+    with db_helper.transaction() as db:
+        cur = db.cursor(dictionary=True)
+        try:
+            # 1. Fetch token
+            cur.execute("SELECT * FROM tokens WHERE token = %s FOR UPDATE", (token_str,))
+            token_row = cur.fetchone()
+            if not token_row:
+                return jsonify({"error": "Token not found"}), 404
+            
+            token_data = cast(dict[str, Any], token_row)
+            
+            # 2. Check status and expiry
+            if token_data["status"] != "issued":
+                return jsonify({"error": "Token is not valid or already used"}), 400
+                
+            expires_at = Instant.from_timestamp(token_data["expires"].timestamp())
+            if Instant.now() > expires_at:
+                cur.execute("UPDATE tokens SET status = 'expired' WHERE token = %s", (token_str,))
+                return jsonify({"error": "Token has expired"}), 400
+                
+            amount = Decimal(str(token_data["amount"])).quantize(Decimal("0.001"))
+            if amount < Decimal("0.001"):
+                return jsonify({"error": "Payment amount cannot be lower than 0.001"}), 400
+
+            tax_category = str(token_data["tax"])
+            sender_uuid = str(token_data["sender_uuid"])
+            recipient_uuid = str(token_data["recipient_uuid"])
+            
+            # Tax calculation
+            if tax_category == "1":
+                tax = Decimal("0.300")
+                tax_amount = (amount * tax).quantize(Decimal("0.001"))
+                if tax_amount < Decimal("0.001"):
+                    tax_amount = Decimal("0.001")
+                final_amount = amount + tax_amount
+            else:
+                tax_amount = Decimal("0.000")
+                final_amount = amount
+                
+            # 3. Retrieve Donor
+            cur.execute("""
+                SELECT b.id, b.balance, b.is_frozen, b.account_number,
+                       CASE
+                           WHEN b.account_holder_type = 'user' THEN u.username
+                           WHEN b.account_holder_type = 'gov' THEN 'Gov Entity'
+                           WHEN b.account_holder_type = 'company' THEN 'Company'
+                           ELSE 'Unknown'
+                       END AS holder
+                FROM bank_accounts b
+                LEFT JOIN users u
+                    ON b.account_holder_type = 'user'
+                    AND u.id = CAST(b.account_holder_id AS UNSIGNED)
+                WHERE b.uuid = %s
+                  AND b.is_deleted = 0
+                LIMIT 1
+            """, (sender_uuid,))
+            donor_row = cur.fetchone()
+            if not donor_row:
+                return jsonify({"error": "Sender account not found"}), 404
+            
+            donor = cast(dict[str, Any], donor_row)
+            if donor["balance"] < final_amount:
+                return jsonify({"error": "Insufficient funds in sender account"}), 402
+            
+            donor_account_number = str(donor["account_number"])
+            donor_holder = str(donor["holder"])
+                
+            # 4. Retrieve Recipient
+            cur.execute("""
+                SELECT b.id, b.is_frozen, b.account_number,
+                       CASE
+                           WHEN b.account_holder_type = 'user' THEN u.username
+                           WHEN b.account_holder_type = 'gov' THEN 'Gov Entity'
+                           WHEN b.account_holder_type = 'company' THEN 'Company'
+                           ELSE 'Unknown'
+                       END AS holder
+                FROM bank_accounts b
+                LEFT JOIN users u
+                    ON b.account_holder_type = 'user'
+                    AND u.id = CAST(b.account_holder_id AS UNSIGNED)
+                WHERE b.uuid = %s
+                  AND b.is_deleted = 0
+                LIMIT 1
+            """, (recipient_uuid,))
+            receiver_row = cur.fetchone()
+            if not receiver_row:
+                return jsonify({"error": "Recipient account not found"}), 404
+                
+            receiver = cast(dict[str, Any], receiver_row)
+            receiver_account_number = str(receiver["account_number"])
+            receiver_holder = str(receiver["holder"])
+            
+            if donor["is_frozen"] or receiver["is_frozen"]:
+                return jsonify({"error": "Account involved is frozen"}), 403
+                
+            # 5. Insert Primary Transaction
+            description = token_data.get("label") or "SP Token Payment"
+            cur.execute("""
+                INSERT INTO transactions (
+                    transaction_type, 
+                    from_account_id, 
+                    to_account_id, 
+                    amount,
+                    tax_category,
+                    description,
+                    confirmed
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, ("payment", donor["id"], receiver["id"], amount, tax_category, description, 1))
+            transaction_id = cur.lastrowid
+            
+            # 6. Apply Balances
+            cur.execute("UPDATE bank_accounts SET balance = balance - %s WHERE id = %s", (amount, donor["id"]))
+            cur.execute("UPDATE bank_accounts SET balance = balance + %s WHERE id = %s", (amount, receiver["id"]))
+            
+            # 7. Apply Tax Transaction (if necessary)
+            tax_id = ""
+            if tax_amount > 0:
+                tax = Decimal("0.300")
+                tax_desc = f"30% Tax - ID: {transaction_id}"
+                metadata = json.dumps({
+                    "tax": str(tax), 
+                    "tax_amount": str(tax_amount), 
+                    "tax_category": tax_category, 
+                    "transaction_id": transaction_id
+                })
+                cur.execute("""
+                    INSERT INTO transactions (
+                        transaction_type, 
+                        from_account_id,
+                        amount,
+                        tax_category,
+                        description,
+                        metadata,
+                        confirmed
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, ("tax", donor["id"], tax_amount, tax_category, tax_desc, metadata, 1))
+                tax_id = cur.lastrowid
+                cur.execute("UPDATE bank_accounts SET balance = balance - %s WHERE id = %s", (tax_amount, donor["id"]))
+            
+            # 8. Mark Token as Used
+            cur.execute("""
+                UPDATE tokens 
+                SET status = 'used', used_at = NOW() 
+                WHERE token = %s
+            """, (token_str,))
+            
+            webhook_url = token_data.get("webhook_url")
+            
+        finally:
+            cur.close()
+            
+    # Webhook Logic (outside the DB transaction block but after it commits)
+    if webhook_url:
+        try:
+            timestamp_iso = Instant.now().py_datetime().isoformat()
+            is_discord = "discord.com/api/webhooks/" in webhook_url
+            if is_discord:
+                # Discord Rich Embed format
+                payload = {
+                    "embeds": [{
+                        "title": "Payment Completed",
+                        "color": 65280, # Green
+                        "timestamp": timestamp_iso,
+                        "fields": [
+                            {"name": "Transaction ID", "value": str(transaction_id), "inline": True},
+                            {"name": "Amount", "value": f"{amount} $", "inline": True},
+                            {"name": "Tax Subtracted", "value": f"{tax_amount} $", "inline": True},
+                            {"name": "Sender", "value": f"{donor_holder} ({donor_account_number})", "inline": False},
+                            {"name": "Recipient", "value": f"{receiver_holder} ({receiver_account_number})", "inline": False},
+                            {"name": "Label", "value": description, "inline": False}
+                        ],
+                        "footer": {"text": "LinePay - Provided by Albion InterCap"}
+                    }]
+                }
+            else:
+                # Custom generic JSON format
+                payload = {
+                    "status": "Payment Completed",
+                    "transaction_id": transaction_id,
+                    "amount": str(amount),
+                    "tax_amount": str(tax_amount),
+                    "description": description,
+                    "sender_account_number": donor_account_number,
+                    "sender_holder": donor_holder,
+                    "recipient_account_number": receiver_account_number,
+                    "recipient_holder": receiver_holder,
+                    "timestamp": timestamp_iso
+                }
+            
+            requests.post(webhook_url, json=payload, timeout=5)
+        except Exception as e:
+            logger.error(f"Failed to trigger webhook for token {token_str}: {str(e)}")
+
+    return jsonify({
+        "success": True,
+        "message": "Payment successful",
+        "transaction_id": transaction_id,
+        "tax_id": tax_id
+    }), 200
