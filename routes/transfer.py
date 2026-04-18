@@ -240,22 +240,28 @@ def make_payment(data):
             if tax_amount > 0:
                 tax = Decimal("0.300") # 30% Tax, hardcoded until Government System
                 description = str(f"30% Tax - ID: {transaction_id}")
+                gov_tax_account: int = 26
                 metadata = json.dumps({"tax": str(tax), "tax_amount": str(tax_amount), "tax_category": tax_category, "transaction_id": transaction_id})
                 cur.execute("""
                     INSERT INTO transactions (
                         transaction_type, 
                         from_account_id,
+                        to_account_id,
                         amount,
                         tax_category,
                         description,
                         metadata,
                         confirmed
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """, ("tax", donor["id"], tax_amount, tax_category, description, metadata, 1))
+                """, ("tax", donor["id"], gov_tax_account, tax_amount, tax_category, description, metadata, 1))
                 tax_id = cur.lastrowid
                 cur.execute(
                     "UPDATE bank_accounts SET balance = balance - %s WHERE id = %s",
                     (tax_amount, donor["id"])
+                )
+                cur.execute(
+                    "UPDATE bank_accounts SET balance = balance + %s WHERE id = %s",
+                    (tax_amount, gov_tax_account)
                 )
             else:
                 tax_id = ""
