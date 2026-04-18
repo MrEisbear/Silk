@@ -284,6 +284,7 @@ def issue_payment():
             tax_id = ""
             if tax_amount > 0:
                 tax = Decimal("0.300")
+                gov_tax_account = 26
                 tax_desc = f"30% Tax - ID: {transaction_id}"
                 metadata = json.dumps({
                     "tax": str(tax), 
@@ -295,16 +296,17 @@ def issue_payment():
                     INSERT INTO transactions (
                         transaction_type, 
                         from_account_id,
+                        to_account_id,
                         amount,
                         tax_category,
                         description,
                         metadata,
                         confirmed
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """, ("tax", donor["id"], tax_amount, tax_category, tax_desc, metadata, 1))
+                """, ("tax", donor["id"], gov_tax_account, tax_amount, tax_category, tax_desc, metadata, 1))
                 tax_id = cur.lastrowid
                 cur.execute("UPDATE bank_accounts SET balance = balance - %s WHERE id = %s", (tax_amount, donor["id"]))
-            
+                cur.execute("UPDATE bank_accounts SET balance = balance + %s WHERE id = %s", (tax_amount, gov_tax_account))
             # 8. Mark Token as Used
             cur.execute("""
                 UPDATE tokens 
