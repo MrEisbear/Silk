@@ -142,9 +142,9 @@ def get_statement(data: dict[str, Any], bankaccount_id: str, year: int, month: i
         is_success = bool(r.get("is_success"))
 
         if is_success:
-            if str(r.get("to_account_id")) == str(bankaccount_id):
+            if str(r.get("to_account_id")) == str(real_account_id):
                 total_in += amount
-            elif str(r.get("from_account_id")) == str(bankaccount_id):
+            elif str(r.get("from_account_id")) == str(real_account_id):
                 total_out += amount
 
         # enrich response
