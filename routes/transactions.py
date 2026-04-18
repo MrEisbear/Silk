@@ -11,8 +11,8 @@ import simplejson as json
 
 bp = Blueprint("transactions", __name__, url_prefix="/api/transactions")
 
-def get_account_ids(cur: Any, identifier: str) -> tuple[int, int] | None:
-    """Helper to resolve an account and return (id, account_holder_id)."""
+def get_account_ids(cur: Any, identifier: str) -> tuple[int, int, Decimal] | None:
+    """Helper to resolve an account and return (id, account_holder_id, balance)."""
     if identifier.isdigit():
         col = "id"
     elif len(identifier) == 36 and "-" in identifier:
@@ -20,13 +20,13 @@ def get_account_ids(cur: Any, identifier: str) -> tuple[int, int] | None:
     else:
         col = "account_number"
         
-    cur.execute(f"SELECT id, account_holder_id FROM bank_accounts WHERE {col} = %s", (identifier,))
+    cur.execute(f"SELECT id, account_holder_id, balance FROM bank_accounts WHERE {col} = %s", (identifier,))
     row = cur.fetchone()
     if not row:
         return None
         
     parse = cast(dict[str, Any], row)
-    return int(parse["id"]), int(parse["account_holder_id"])
+    return int(parse["id"]), int(parse["account_holder_id"]), Decimal(str(parse["balance"]))
 
 @bp.route("/statement/<string:bankaccount_id>/<int:year>/<int:month>", methods=["GET"])
 @require_permission("bank.accounts.self.view.statement")
@@ -51,7 +51,7 @@ def get_statement(data: dict[str, Any], bankaccount_id: str, year: int, month: i
         if not ids:
             return {"error": "Account not found"}, 404
 
-        real_account_id, account_holder_id = ids
+        real_account_id, account_holder_id, current_balance = ids
         if account_holder_id != int(user_id):
             return {"error": "Account not found"}, 404
 
@@ -103,6 +103,31 @@ def get_statement(data: dict[str, Any], bankaccount_id: str, year: int, month: i
         })
 
         rows = cast(list[dict[str, Any]], cur.fetchall())
+
+        # --- Reconstruct Historical Balances ---
+        # 1. Calculate the exact net flow that happened AFTER this month
+        cur.execute("""
+            SELECT SUM(amount) as future_in 
+            FROM transactions 
+            WHERE to_account_id = %(acc_id)s 
+              AND created_at >= %(end)s 
+              AND confirmed = 1
+        """, {"acc_id": real_account_id, "end": end})
+        row_future_in = cast(dict[str, Any], cur.fetchone() or {})
+        future_in = Decimal(str(row_future_in.get("future_in") or 0))
+
+        cur.execute("""
+            SELECT SUM(amount) as future_out 
+            FROM transactions 
+            WHERE from_account_id = %(acc_id)s 
+              AND created_at >= %(end)s 
+              AND confirmed = 1
+        """, {"acc_id": real_account_id, "end": end})
+        row_future_out = cast(dict[str, Any], cur.fetchone() or {})
+        future_out = Decimal(str(row_future_out.get("future_out") or 0))
+
+        # 2. Starting from the live balance, remove all future flow mathematically to get our ending boundary
+        ending_balance = current_balance - (future_in - future_out)
 
     # --- Domain mapping (kept OUT of SQL) ---
     GOV_ACCOUNT_NAMES = {
@@ -171,11 +196,20 @@ def get_statement(data: dict[str, Any], bankaccount_id: str, year: int, month: i
         del r["to_holder_id"]
         del r["to_username"]
 
+    # 3. Step back once more using the month's own flow to find its starting boundary!
+    starting_balance = ending_balance - (total_in - total_out)
+
+    now = datetime.now()
+    is_incomplete = (year > now.year) or (year == now.year and month >= now.month)
+
     return jsonify({
         "statement_period": f"{year}-{month:02d}",
+        "is_incomplete": is_incomplete,
         "summary": {
+            "starting_balance": float(starting_balance),
             "total_in": float(total_in),
             "total_out": float(total_out),
+            "ending_balance": float(ending_balance)
         },
         "transactions": rows
     }), 200
@@ -191,7 +225,7 @@ def get_recent_transactions(data: dict[str, int | str | bool], bankaccount_id: s
         if not ids:
             return {"error":"Account not found"}, 404
         
-        real_account_id, account_holder_id = ids
+        real_account_id, account_holder_id, _ = ids
         if account_holder_id != int(user_id):
             return {"error":"Account not found"}, 404
         
@@ -224,7 +258,7 @@ def get_history(data: dict[str, int | str | bool], bankaccount_id: str):
         if not ids:
             return {"error":"Account not found"}, 404
         
-        real_account_id, account_holder_id = ids
+        real_account_id, account_holder_id, _ = ids
         if account_holder_id != int(user_id):
             return {"error":"Account not found"}, 404
         
