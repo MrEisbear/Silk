@@ -63,7 +63,7 @@ def transfer(data):
 
     # Validate and parse amount as Decimal
     try:
-        amount = Decimal(str(req["amount"]))
+        amount = Decimal(str(req["amount"])).quantize(Decimal("0.001"))
     except Exception:
         return jsonify({"error": "Invalid amount"}), 400
     if amount <= 0:
@@ -161,7 +161,7 @@ def make_payment(data):
 
     # Validate and parse amount as Decimal
     try:
-        amount = Decimal(str(req["amount"]))
+        amount = Decimal(str(req["amount"])).quantize(Decimal("0.001"))
     except Exception:
         return jsonify({"error": "Invalid amount"}), 400
     if amount <= 0:
@@ -170,8 +170,10 @@ def make_payment(data):
     match tax_category:
         case "1":
             tax = Decimal("0.300") # 30% Tax, hardcoded until Government System
-            final_amount = amount * (1 + tax)
+            tax_amount = (amount * tax).quantize(Decimal("0.001"))
+            final_amount = amount + tax_amount
         case _:
+            tax_amount = Decimal("0.000")
             final_amount = amount
         
     # Use transaction for atomicity
@@ -235,36 +237,28 @@ def make_payment(data):
                 (amount, receiver["id"])
             )
 
-            match tax_category:
-                case "1":
-                    tax = Decimal("0.300") # 30% Tax, hardcoded until Government System
-                    tax_amount = (amount * (1 + tax)) - amount
-
-                    description = str(f"30% Tax - ID: {transaction_id}")
-                    metadata = json.dumps({"tax": tax, "tax_amount": tax_amount, "tax_category": tax_category, "transaction_id": transaction_id})
-                    cur.execute("""
-                        INSERT INTO transactions (
-                            transaction_type, 
-                            from_account_id,
-                            amount,
-                            tax_category,
-                            description,
-                            metadata,
-                            confirmed
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    """, ("tax", donor["id"], tax_amount, tax_category, description, metadata, 1))
-                    tax_id = cur.lastrowid
-                    cur.execute(
-                        "UPDATE bank_accounts SET balance = balance - %s WHERE id = %s",
-                        (tax_amount, donor["id"])
-                    )
-                    # cur.execute(
-                    #    "UPDATE bank_accounts SET balance = balance + %s WHERE id = %s",
-                    #    (tax_amount, "1")
-                    #)
-                case _:
-                    tax_id = ""
-                    pass
+            if tax_amount > 0:
+                tax = Decimal("0.300") # 30% Tax, hardcoded until Government System
+                description = str(f"30% Tax - ID: {transaction_id}")
+                metadata = json.dumps({"tax": str(tax), "tax_amount": str(tax_amount), "tax_category": tax_category, "transaction_id": transaction_id})
+                cur.execute("""
+                    INSERT INTO transactions (
+                        transaction_type, 
+                        from_account_id,
+                        amount,
+                        tax_category,
+                        description,
+                        metadata,
+                        confirmed
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, ("tax", donor["id"], tax_amount, tax_category, description, metadata, 1))
+                tax_id = cur.lastrowid
+                cur.execute(
+                    "UPDATE bank_accounts SET balance = balance - %s WHERE id = %s",
+                    (tax_amount, donor["id"])
+                )
+            else:
+                tax_id = ""
             logger.verbose(f"Payment of {amount} completed. TX ID: {transaction_id}, Tax ID: {tax_id}")
 
         finally:
