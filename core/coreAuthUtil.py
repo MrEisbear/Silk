@@ -2,13 +2,15 @@
 
 import bcrypt, jwt
 from core.coreCache import redis_client
-import json
+import simplejson as json
 from whenever import Instant, hours
 from flask import request, jsonify
 import os
 from typing import Any, Callable, cast
 from core.logger import logger
 import hashlib
+import re
+from functools import wraps
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
@@ -121,64 +123,68 @@ def require_token(func: Callable[..., Any]) -> Callable[..., Any]:
             return jsonify({"error": "Invalid token"}), 401
     return wrapper
 
+
+
+def compile_pattern(pattern: str) -> re.Pattern[str]:
+    """
+    Converts permission pattern into regex.
+    Supports:   
+    - ** (matches across dot segments)
+    - * (matches within a single dot segment)
+    - prefix, suffix, middle wildcards
+    """
+
+    escaped = re.escape(pattern)
+
+    # restore wildcard meaning
+    # A double asterisk `\*\*` becomes `.*` (match across dots)
+    escaped = escaped.replace(r"\*\*", ".*")
+    # A single asterisk `\*` becomes `[^.]+` (match anything except a dot)
+    escaped = escaped.replace(r"\*", r"[^.]+")
+
+    # anchor full match
+    return re.compile("^" + escaped + "$")
+
+
+def match_permission(pattern: str, required: str) -> bool:
+    return compile_pattern(pattern).match(required) is not None
+
+
+def has_permission(user_permissions: set[str], required: str) -> bool:
+    best_allow = -1
+    best_deny = -1
+
+    def score(pattern: str) -> int:
+        # specificity = fewer wildcards = more specific
+        return pattern.count("*") * -10 + len(pattern)
+
+    for perm in user_permissions:
+        is_deny = perm.startswith("!")
+        clean = perm[1:] if is_deny else perm
+
+        if not match_permission(clean, required):
+            continue
+
+        s = score(clean)
+
+        if is_deny:
+            best_deny = max(best_deny, s)
+        else:
+            best_allow = max(best_allow, s)
+
+    if best_allow == -1 and best_deny == -1:
+        return False
+
+    if best_deny > best_allow:
+        return False
+    if best_allow > best_deny:
+        return True
+
+    return best_allow != -1 and best_deny == -1
+
+
 def require_permission(permission_key: str):
     from functools import wraps
-
-    def match_score(pattern: str, required: str) -> int | None:
-        """
-        Returns specificity score if pattern matches required.
-        Higher = more specific.
-        Supports wildcards properly (no length trap).
-        """
-        p_parts = pattern.split(".")
-        r_parts = required.split(".")
-
-        score = 0
-
-        for i, p in enumerate(p_parts):
-            if p == "*":
-                return score  # wildcard matches rest (any depth)
-
-            if i >= len(r_parts) or p != r_parts[i]:
-                return None
-
-            score += 1  # exact match increases specificity
-
-        # Only enforce equal length if NO wildcard was used
-        if len(p_parts) != len(r_parts):
-            return None
-
-        return score
-
-    def has_permission(user_permissions: set[str], required: str) -> bool:
-        best_allow = -1
-        best_deny = -1
-
-        for perm in user_permissions:
-            is_deny = perm.startswith("!")
-            clean = perm[1:] if is_deny else perm
-
-            score = match_score(clean, required)
-            if score is None:
-                continue
-
-            if is_deny:
-                best_deny = max(best_deny, score)
-            else:
-                best_allow = max(best_allow, score)
-
-        # nothing matched
-        if best_allow == -1 and best_deny == -1:
-            return False
-
-        # more specific wins
-        if best_deny > best_allow:
-            return False
-        if best_allow > best_deny:
-            return True
-
-        # same specificity → deny wins
-        return best_allow != -1 and best_deny == -1
 
     def decorator(func):
         @wraps(func)
@@ -187,23 +193,21 @@ def require_permission(permission_key: str):
             user_id = data.get("id")
             if not user_id:
                 return jsonify({"error": f"Missing permission: {permission_key}"}), 403
+
             cache_key = f"perm:{user_id}"
 
-            cached = cast(str | None, redis_client.get(cache_key))
+            cached_raw = redis_client.get(cache_key)
 
-            if cached:
-                permissions = set(json.loads(cached))
+            if cached_raw is not None:
+                cached_str: str = cast(str, cached_raw)
+                permissions = set(cast(list[str], json.loads(cached_str)))
+
             else:
                 from core.database import db_helper
 
                 with db_helper.cursor() as cur:
-                    # single query: get ALL permissions (user + jobs)
                     cur.execute("""
                     WITH RECURSIVE job_tree AS (
-                        SELECT 1 as job_id
-
-                        UNION
-
                         SELECT uj.job_id
                         FROM user_jobs uj
                         WHERE uj.user_uuid = (SELECT uuid FROM users WHERE id = %s)
@@ -214,39 +218,55 @@ def require_permission(permission_key: str):
                         FROM jobs j
                         JOIN job_tree jt ON j.id = jt.job_id
                         WHERE j.parent_job_id IS NOT NULL
-                    )
+                    ),
 
-                    SELECT p.permission_key
-                    FROM permissions p
-                    WHERE p.id IN (
-                        -- job permissions (including inherited)
-                        SELECT jp.permission_id
-                        FROM job_permissions jp
+                    job_perms AS (
+                        SELECT p.permission_key
+                        FROM permissions p
+                        JOIN job_permissions jp ON jp.permission_id = p.id
                         WHERE jp.job_id IN (SELECT job_id FROM job_tree)
+                    ),
+
+                    user_perms AS (
+                        SELECT p.permission_key
+                        FROM permissions p
+                        JOIN user_permissions up ON up.permission_id = p.id
+                        WHERE up.user_uuid = (SELECT uuid FROM users WHERE id = %s)
+                    ),
+
+                    group_perms AS (
+                        SELECT p.permission_key
+                        FROM permissions p
+                        JOIN group_permissions gp ON gp.permission_id = p.id
+                        JOIN user_groups ug ON ug.group_id = gp.group_id
+                        WHERE ug.user_uuid = (SELECT uuid FROM users WHERE id = %s)
 
                         UNION
 
-                        -- direct user permissions
-                        SELECT permission_id
-                        FROM user_permissions
-                        WHERE user_uuid = (SELECT uuid FROM users WHERE id = %s)
+                        SELECT p.permission_key
+                        FROM permissions p
+                        JOIN group_permissions gp ON gp.permission_id = p.id
+                        JOIN permission_groups pg ON pg.id = gp.group_id
+                        WHERE pg.group_key = 'default'
                     )
-                    """, (user_id, user_id))
-                    
-                    from typing import TypedDict
 
-                    class PermissionRow(TypedDict):
-                        permission_key: str
-                    rows = cast(list[PermissionRow], cur.fetchall())
-                    permissions = {row["permission_key"] for row in rows}
+                    SELECT permission_key FROM job_perms
+                    UNION
+                    SELECT permission_key FROM user_perms
+                    UNION
+                    SELECT permission_key FROM group_perms
+                    """, (user_id, user_id, user_id))
+
+                    rows = cast(list[dict[str, Any]], cur.fetchall())
+                    permissions = {r["permission_key"] for r in rows}
+
                 redis_client.setex(cache_key, 600, json.dumps(list(permissions)))
+
             if not has_permission(permissions, permission_key):
                 return jsonify({"error": f"Missing permission: {permission_key}"}), 403
             return func(data, *args, **kwargs)
-
         return wrapper
     return decorator
-    
 
 def require_role(required_role: str) -> Callable[..., Any]:
     """

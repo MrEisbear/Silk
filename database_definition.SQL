@@ -18,7 +18,7 @@ CREATE TABLE `bank_accounts` (
   UNIQUE KEY `account_number` (`account_number`),
   UNIQUE KEY `unique_uuid` (`uuid`),
   KEY `idx_holder` (`account_holder_type`,`account_holder_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=26 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=30 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
 -- silk.gift_codes definition
@@ -40,6 +40,18 @@ CREATE TABLE `gift_codes` (
   KEY `idx_redeemed` (`redeemed_by`),
   KEY `idx_expires` (`expires_at`)
 ) ENGINE=InnoDB AUTO_INCREMENT=54 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- silk.permissions definition
+
+CREATE TABLE `permissions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `permission_key` varchar(64) NOT NULL,
+  `description` varchar(255) DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `permission_key` (`permission_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
 -- silk.salary_classes definition
@@ -92,7 +104,7 @@ CREATE TABLE `users` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uuid` (`uuid`),
   UNIQUE KEY `email` (`email`)
-) ENGINE=InnoDB AUTO_INCREMENT=22 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=24 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
 -- silk.jobs definition
@@ -102,10 +114,13 @@ CREATE TABLE `jobs` (
   `job_name` varchar(64) NOT NULL,
   `department` varchar(64) DEFAULT NULL,
   `salary_class` tinyint(4) DEFAULT NULL,
+  `parent_job_id` int(11) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `fk_job_salary` (`salary_class`),
-  CONSTRAINT `fk_job_salary` FOREIGN KEY (`salary_class`) REFERENCES `salary_classes` (`class_level`)
-) ENGINE=InnoDB AUTO_INCREMENT=43 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+  KEY `fk_parent_job` (`parent_job_id`),
+  CONSTRAINT `fk_job_salary` FOREIGN KEY (`salary_class`) REFERENCES `salary_classes` (`class_level`),
+  CONSTRAINT `fk_parent_job` FOREIGN KEY (`parent_job_id`) REFERENCES `jobs` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=45 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
 -- silk.transactions definition
@@ -130,7 +145,7 @@ CREATE TABLE `transactions` (
   KEY `idx_transactions_to_date` (`to_account_id`,`created_at` DESC,`id` DESC),
   CONSTRAINT `transactions_ibfk_1` FOREIGN KEY (`from_account_id`) REFERENCES `bank_accounts` (`id`) ON DELETE SET NULL,
   CONSTRAINT `transactions_ibfk_2` FOREIGN KEY (`to_account_id`) REFERENCES `bank_accounts` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB AUTO_INCREMENT=140 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=155 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
 -- silk.user_jobs definition
@@ -142,4 +157,55 @@ CREATE TABLE `user_jobs` (
   KEY `fk_uj_job` (`job_id`),
   CONSTRAINT `fk_uj_job` FOREIGN KEY (`job_id`) REFERENCES `jobs` (`id`),
   CONSTRAINT `fk_uj_user` FOREIGN KEY (`user_uuid`) REFERENCES `users` (`uuid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- silk.user_permissions definition
+
+CREATE TABLE `user_permissions` (
+  `user_uuid` char(36) NOT NULL,
+  `permission_id` int(11) NOT NULL,
+  PRIMARY KEY (`user_uuid`,`permission_id`),
+  KEY `fk_up_permission` (`permission_id`),
+  CONSTRAINT `fk_up_permission` FOREIGN KEY (`permission_id`) REFERENCES `permissions` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_up_user` FOREIGN KEY (`user_uuid`) REFERENCES `users` (`uuid`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- silk.job_permissions definition
+
+CREATE TABLE `job_permissions` (
+  `job_id` int(11) NOT NULL,
+  `permission_id` int(11) NOT NULL,
+  PRIMARY KEY (`job_id`,`permission_id`),
+  KEY `fk_jp_permission` (`permission_id`),
+  CONSTRAINT `fk_jp_job` FOREIGN KEY (`job_id`) REFERENCES `jobs` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_jp_permission` FOREIGN KEY (`permission_id`) REFERENCES `permissions` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE permission_groups (
+  id INT(11) NOT NULL AUTO_INCREMENT,
+  group_key VARCHAR(64) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY (group_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE group_permissions (
+  group_id INT(11) NOT NULL,
+  permission_id INT(11) NOT NULL,
+  PRIMARY KEY (group_id, permission_id),
+  CONSTRAINT fk_gp_group FOREIGN KEY (group_id) 
+    REFERENCES permission_groups(id) ON DELETE CASCADE,
+  CONSTRAINT fk_gp_permission FOREIGN KEY (permission_id) 
+    REFERENCES permissions(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE user_groups (
+  user_uuid CHAR(36) NOT NULL,
+  group_id INT(11) NOT NULL,
+  PRIMARY KEY (user_uuid, group_id),
+  CONSTRAINT fk_ug_user FOREIGN KEY (user_uuid) 
+    REFERENCES users(uuid) ON DELETE CASCADE,
+  CONSTRAINT fk_ug_group FOREIGN KEY (group_id) 
+    REFERENCES permission_groups(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
