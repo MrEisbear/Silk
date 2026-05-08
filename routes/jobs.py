@@ -4,7 +4,6 @@ from core.database import db_helper
 from core.logger import logger
 from core.limiter import limiter
 from typing import Any, cast
-from decimal import Decimal
 from datetime import datetime, timedelta
 bp = Blueprint("jobs", __name__, url_prefix="/api/jobs")
 

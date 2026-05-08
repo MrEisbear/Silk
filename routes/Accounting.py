@@ -3,7 +3,6 @@ from core.coreAuthUtil import require_token, hash_pin
 from core.database import db_helper
 from core.logger import logger
 from typing import  Any, cast
-import os
 from core.coreRandUtil import generate_account_number
 
 
@@ -31,7 +30,7 @@ def create_user_accounts(data):
         row = cur.fetchone()
         user = cast(dict[str, Any], row)
         discord_id = user["discord_id"]
-        if discord_id == None:
+        if discord_id is None:
             type = "M-"
             discord_id = user_id
         else:

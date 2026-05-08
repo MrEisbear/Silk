@@ -1,11 +1,9 @@
-from flask import Blueprint, redirect, request, jsonify
+from flask import Blueprint, request, jsonify
 from core.coreAuthUtil import require_token, get_user_permissions
 from core.database import db_helper
 from core.logger import logger
 from typing import cast, Any
-import os
-import requests
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlparse
 
 bp = Blueprint("user", __name__, url_prefix="/api")
 
