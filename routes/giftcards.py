@@ -3,12 +3,11 @@ from core.coreAuthUtil import require_token
 from core.database import db_helper
 from core.logger import logger
 from typing import Any, cast
-import os
 from decimal import Decimal
 import simplejson as json
 import secrets
 import string
-from whenever import Instant, minutes, hours
+from whenever import Instant, hours
 from datetime import timezone
 
 bp = Blueprint("giftcards", __name__, url_prefix="/api/bank")
@@ -69,8 +68,6 @@ def redeem_giftcard(data):
                 logger.fatal(f"Refund failed, Amount: {amount}, Code: {code}")
             return jsonify({"error": "Giftcard expired"}), 403
         
-        # Give Money back to original account?
-        
         cur.execute("SELECT * FROM bank_accounts WHERE uuid = %s", (to_account,))
         row = cur.fetchone()
         if not row:
@@ -80,11 +77,11 @@ def redeem_giftcard(data):
 
         holder = account["account_holder_id"]
         acc_id = account["id"]
-        validify2 = int(account["is_frozen"])
-        validify1 = str(account["account_holder_type"])
-        if validify1 != "user":
+        account_isfrozen = int(account["is_frozen"])
+        account_holdertype = str(account["account_holder_type"])
+        if account_holdertype != "user":
             return jsonify({"error": "Account not found"}), 404
-        if validify2 != 0:
+        if account_isfrozen != 0:
             return jsonify({"error": "Account not found"}), 404
         if int(holder) != int(user_id):
             return jsonify({"error": "Account not found"}), 404
@@ -131,6 +128,7 @@ def redeem_giftcard(data):
             cur.close()
         return jsonify({
             "transaction_id": transaction_id,
+            "new_balance": balance + amount,
             "amount": amount
         }), 200
                 
@@ -148,7 +146,8 @@ def create_giftcard(data):
     source_acc = req["source_account"]
     try:
         amount = Decimal(str(req["amount"]))
-    except:
+    except Exception as e:
+        logger.error(f"Invalid amount: {e}")
         return jsonify({"error": "Invalid amount"}), 400
     
     if amount < 0:
