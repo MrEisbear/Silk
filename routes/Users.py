@@ -1,5 +1,5 @@
 from flask import Blueprint, redirect, request, jsonify
-from core.coreAuthUtil import require_token
+from core.coreAuthUtil import require_token, get_user_permissions
 from core.database import db_helper
 from core.logger import logger
 from typing import cast, Any
@@ -8,6 +8,13 @@ import requests
 from urllib.parse import urlencode, urlparse
 
 bp = Blueprint("user", __name__, url_prefix="/api")
+
+@bp.route("/me/permissions", methods=["GET"])
+@require_token
+def me_permissions(data):
+    user_id = data["id"]
+    perms = get_user_permissions(user_id)
+    return jsonify({"permissions": list(perms)})
 
 @bp.route("/me", methods=["GET"])
 @require_token

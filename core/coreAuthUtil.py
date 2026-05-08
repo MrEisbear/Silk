@@ -183,7 +183,76 @@ def has_permission(user_permissions: set[str], required: str) -> bool:
     return best_allow != -1 and best_deny == -1
 
 
-def require_permission(permission_key: str):
+def get_user_permissions(user_id: int) -> set[str]:
+    cache_key = f"perm:{user_id}"
+    cached_raw = redis_client.get(cache_key)
+
+    if cached_raw is not None:
+        cached_str: str = cast(str, cached_raw)
+        return set(cast(list[str], json.loads(cached_str)))
+
+    from core.database import db_helper
+
+    with db_helper.cursor() as cur:
+        cur.execute("""
+        WITH RECURSIVE job_tree AS (
+            SELECT uj.job_id
+            FROM user_jobs uj
+            WHERE uj.user_uuid = (SELECT uuid FROM users WHERE id = %s)
+
+            UNION ALL
+
+            SELECT j.parent_job_id
+            FROM jobs j
+            JOIN job_tree jt ON j.id = jt.job_id
+            WHERE j.parent_job_id IS NOT NULL
+        ),
+
+        job_perms AS (
+            SELECT p.permission_key
+            FROM permissions p
+            JOIN job_permissions jp ON jp.permission_id = p.id
+            WHERE jp.job_id IN (SELECT job_id FROM job_tree)
+        ),
+
+        user_perms AS (
+            SELECT p.permission_key
+            FROM permissions p
+            JOIN user_permissions up ON up.permission_id = p.id
+            WHERE up.user_uuid = (SELECT uuid FROM users WHERE id = %s)
+        ),
+
+        group_perms AS (
+            SELECT p.permission_key
+            FROM permissions p
+            JOIN group_permissions gp ON gp.permission_id = p.id
+            JOIN user_groups ug ON ug.group_id = gp.group_id
+            WHERE ug.user_uuid = (SELECT uuid FROM users WHERE id = %s)
+
+            UNION
+
+            SELECT p.permission_key
+            FROM permissions p
+            JOIN group_permissions gp ON gp.permission_id = p.id
+            JOIN permission_groups pg ON pg.id = gp.group_id
+            WHERE pg.group_key = 'default'
+        )
+
+        SELECT permission_key FROM job_perms
+        UNION
+        SELECT permission_key FROM user_perms
+        UNION
+        SELECT permission_key FROM group_perms
+        """, (user_id, user_id, user_id))
+
+        rows = cast(list[dict[str, Any]], cur.fetchall())
+        permissions = {r["permission_key"] for r in rows}
+
+    redis_client.setex(cache_key, 600, json.dumps(list(permissions)))
+    return permissions
+
+
+def require_permission(*permission_keys: str, require_all: bool = False):
     from functools import wraps
 
     def decorator(func):
@@ -192,78 +261,20 @@ def require_permission(permission_key: str):
         def wrapper(data, *args, **kwargs):
             user_id = data.get("id")
             if not user_id:
-                return jsonify({"error": f"Missing permission: {permission_key}"}), 403
+                return jsonify({"error": "Missing required permissions"}), 403
 
-            cache_key = f"perm:{user_id}"
+            permissions = get_user_permissions(user_id)
+            
+            if not permission_keys:
+                return func(data, *args, **kwargs)
 
-            cached_raw = redis_client.get(cache_key)
-
-            if cached_raw is not None:
-                cached_str: str = cast(str, cached_raw)
-                permissions = set(cast(list[str], json.loads(cached_str)))
-
+            if require_all:
+                has_access = all(has_permission(permissions, pk) for pk in permission_keys)
             else:
-                from core.database import db_helper
+                has_access = any(has_permission(permissions, pk) for pk in permission_keys)
 
-                with db_helper.cursor() as cur:
-                    cur.execute("""
-                    WITH RECURSIVE job_tree AS (
-                        SELECT uj.job_id
-                        FROM user_jobs uj
-                        WHERE uj.user_uuid = (SELECT uuid FROM users WHERE id = %s)
-
-                        UNION ALL
-
-                        SELECT j.parent_job_id
-                        FROM jobs j
-                        JOIN job_tree jt ON j.id = jt.job_id
-                        WHERE j.parent_job_id IS NOT NULL
-                    ),
-
-                    job_perms AS (
-                        SELECT p.permission_key
-                        FROM permissions p
-                        JOIN job_permissions jp ON jp.permission_id = p.id
-                        WHERE jp.job_id IN (SELECT job_id FROM job_tree)
-                    ),
-
-                    user_perms AS (
-                        SELECT p.permission_key
-                        FROM permissions p
-                        JOIN user_permissions up ON up.permission_id = p.id
-                        WHERE up.user_uuid = (SELECT uuid FROM users WHERE id = %s)
-                    ),
-
-                    group_perms AS (
-                        SELECT p.permission_key
-                        FROM permissions p
-                        JOIN group_permissions gp ON gp.permission_id = p.id
-                        JOIN user_groups ug ON ug.group_id = gp.group_id
-                        WHERE ug.user_uuid = (SELECT uuid FROM users WHERE id = %s)
-
-                        UNION
-
-                        SELECT p.permission_key
-                        FROM permissions p
-                        JOIN group_permissions gp ON gp.permission_id = p.id
-                        JOIN permission_groups pg ON pg.id = gp.group_id
-                        WHERE pg.group_key = 'default'
-                    )
-
-                    SELECT permission_key FROM job_perms
-                    UNION
-                    SELECT permission_key FROM user_perms
-                    UNION
-                    SELECT permission_key FROM group_perms
-                    """, (user_id, user_id, user_id))
-
-                    rows = cast(list[dict[str, Any]], cur.fetchall())
-                    permissions = {r["permission_key"] for r in rows}
-
-                redis_client.setex(cache_key, 600, json.dumps(list(permissions)))
-
-            if not has_permission(permissions, permission_key):
-                return jsonify({"error": f"Missing permission: {permission_key}"}), 403
+            if not has_access:
+                return jsonify({"error": "Missing required permissions"}), 403
             return func(data, *args, **kwargs)
         return wrapper
     return decorator
