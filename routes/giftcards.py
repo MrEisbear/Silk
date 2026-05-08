@@ -151,6 +151,9 @@ def create_giftcard(data):
     except:
         return jsonify({"error": "Invalid amount"}), 400
     
+    if amount < 0:
+        return {"error": "Invalid amount"}, 400
+    
     with db_helper.cursor() as cur:
         cur.execute("SELECT * FROM bank_accounts WHERE uuid = %s", (source_acc,))
         row = cur.fetchone()
