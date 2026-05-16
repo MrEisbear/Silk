@@ -252,7 +252,7 @@ def make_payment(data):
                         description,
                         metadata,
                         confirmed
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """, ("tax", donor["id"], gov_tax_account, tax_amount, tax_category, description, metadata, 1))
                 tax_id = cur.lastrowid
                 cur.execute(
@@ -276,5 +276,3 @@ def make_payment(data):
         "transaction_id": transaction_id,
         "tax_id": tax_id
     }), 200
-
-     

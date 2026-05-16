@@ -97,7 +97,7 @@ def get_user_jobs(data, user_id):
     return jsonify({"username": user["username"], "jobs": jobs}), 200
 
 
-@bp.route("/users/<uuid:user_uuid>/jobs", methods=["POST"])
+@bp.route("/users/<string:user_uuid>/jobs", methods=["POST"])
 @require_role("mod")
 def assign_user_job(data, user_uuid):
     """Assign a job to a user"""
