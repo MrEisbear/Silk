@@ -175,6 +175,8 @@ def discord_callback():
     discord_id = discord_user["id"]
     email = discord_user.get("email")
     username = discord_user["username"]
+    avatar_hash = discord_user.get("avatar")
+    avatar_url = "https://cdn.discordapp.com/avatars/" + discord_id + "/" + avatar_hash + ".png"
     internal_user_id: int
     if email == None:
         logger.verbose(f"{username} did not grand email permission, callback denied.")
@@ -202,13 +204,21 @@ def discord_callback():
                     logger.warning(f"Banned user {existing_user['id']} tried to link Discord via existing email.")
                     return redirect(BASE_URL + "/login?err=403")
                 internal_user_id = int(existing_user["id"])
-                cur.execute("UPDATE users SET discord_id = %s WHERE id = %s", (discord_id, internal_user_id,))
+                cur.execute("""
+                    UPDATE users 
+                    SET discord_id = %s,
+                        avatar_url = CASE
+                            WHEN avatar_url IS NULL OR avatar_url = '' THEN %s 
+                            ELSE avatar_url 
+                        END
+                    WHERE id = %s
+                """, (discord_id, avatar_url, internal_user_id))
                 logger.verbose(f"Linked existing email {email} to new discord_id {discord_id}")
             else:
                 cur.execute("""
-                    INSERT INTO users (uuid, username, email, discord_id, manual)
-                    VALUES (UUID(), %s, %s, %s, FALSE)
-                """, (username, email, discord_id))
+                    INSERT INTO users (uuid, username, email, discord_id, avatar_url, manual)
+                    VALUES (UUID(), %s, %s, %s, %s, FALSE)
+                """, (username, email, discord_id, avatar_url))
                 raw_id = cur.lastrowid
                 if raw_id is None:
                     logger.error("Failed to retrieve last inserted ID")

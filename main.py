@@ -1,3 +1,4 @@
+from api_analytics.flask import add_middleware
 from gevent import monkey
 monkey.patch_all()
 
@@ -34,10 +35,15 @@ dotenv.load_dotenv(env)
 from core.database import db_helper
 #Create the flask app and start the database
 app = Flask(__name__)
+add_middleware(app, "945c3c4f-8ddb-4356-a3cf-e7f15c2a4d8d")  # Add middleware
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 # Set CORS
 from flask_cors import CORS
-CORS(app, origins=["https://brickrigs.de"], supports_credentials=True)
+CORS(app,
+     origins=r"https?://.*",
+     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+     supports_credentials=True,
+     allow_headers=["Content-Type", "Authorization", "X-Requested-With"])
 
 # Register blueprints and Start App
 from routes import register_blueprints, initStatus

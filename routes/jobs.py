@@ -64,7 +64,7 @@ def get_jobs(data):
         cooldown_expires = last_claim + timedelta(hours=24)
         if datetime.now() < cooldown_expires:
             can_claim = False
-            next_claim_time = cooldown_expires.isoformat()
+            next_claim_time = cooldown_expires.isoformat()  
 
     return jsonify({
         "jobs": jobs,

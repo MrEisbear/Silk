@@ -299,7 +299,7 @@ def issue_payment():
                         description,
                         metadata,
                         confirmed
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """, ("tax", donor["id"], gov_tax_account, tax_amount, tax_category, tax_desc, metadata, 1))
                 tax_id = cur.lastrowid
                 cur.execute("UPDATE bank_accounts SET balance = balance - %s WHERE id = %s", (tax_amount, donor["id"]))

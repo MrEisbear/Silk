@@ -281,4 +281,65 @@ def get_history(data: dict[str, int | str | bool], bankaccount_id: str):
                 cast(int, last_row["id"]),
             )
         return {"rows": rows, "next_cursor": next_cursor}, 200
+
+@bp.route("/leaderboard", methods=["GET"])
+def get_leaderboard():
+    page = request.args.get("page", 1, type=int)
+    limit = request.args.get("limit", 10, type=int)
+    
+    if page < 1:
+        page = 1
+    
+    if limit < 1 or limit > 50:
+        limit = 50
         
+    offset = (page - 1) * limit
+
+    with db_helper.cursor() as cur:
+        # Fixed: JOIN ON u.id = ba.account_holder_id
+        cur.execute("""
+            SELECT 
+                u.uuid,
+                u.username, 
+                u.discord_id, 
+                SUM(ba.balance) as total_balance
+            FROM users u
+            JOIN bank_accounts ba ON u.id = ba.account_holder_id
+            WHERE ba.account_holder_type = 'user' 
+              AND ba.is_deleted = 0
+              AND u.is_banned = 0
+              AND u.public_leaderboard = 1
+            GROUP BY u.id, u.uuid, u.username, u.discord_id
+            ORDER BY total_balance DESC
+            LIMIT %s OFFSET %s
+        """, (limit, offset))
+        
+        rows = cur.fetchall()
+        
+        total_count = 0
+        if rows:
+            # Fixed: JOIN ON u.id = ba.account_holder_id
+            cur.execute("""
+                SELECT COUNT(DISTINCT u.id) as total_eligible
+                FROM users u
+                JOIN bank_accounts ba ON u.id = ba.account_holder_id
+                WHERE ba.account_holder_type = 'user' 
+                  AND ba.is_deleted = 0
+                  AND u.is_banned = 0
+                  AND u.public_leaderboard = 1
+            """)
+            result = cur.fetchone()
+            total_count = result["total_eligible"] if result else 0
+            
+    total_pages = (total_count + limit - 1) // limit if total_count > 0 else 0
+
+    return {
+        "data": rows,
+        "meta": {
+            "page": page,
+            "limit": limit,
+            "total_users": total_count,
+            "total_pages": total_pages,
+            "has_next": page < total_pages
+        }
+    }, 200

@@ -56,12 +56,25 @@ def create_user_accounts(data):
             result = cur.fetchone()
             if result and int(cast(dict[str, int], result)["count"]) >= 3:
                 return {"error": "Maximum account limit reached, contact support to create additional accounts."}, 400
+            if result and int(cast(dict[str, int], result)["count"]) == 0:
+                first_account = True
             
             cur.execute("INSERT INTO bank_accounts (account_number, account_holder_type, account_holder_id) VALUES (%s, %s, %s)", (accnum, 'user', user_id,))
         except Exception as e:
             logger.error(str(e))
             return jsonify({"error": "Failed to create bank account"}), 500
+        cur.execute("SELECT COUNT(*) as total FROM bank_accounts WHERE account_holder_id = %s AND account_holder_type = 'user'", (user_id,))
+        result = cur.fetchone()
+        
+        # 2. Access the value via the string key
+        if first_account:
+            start_money = 7500
+            cur.execute(
+                "UPDATE bank_accounts SET balance = balance + %s WHERE account_number = %s", 
+                (start_money, accnum)
+            )
     logger.verbose(f"Bank Account created for {user_id}; {accnum}")
+    
     return jsonify({"account_number": accnum}), 201
 
 @bp.route("/accounts/<uuid:account_uuid>", methods=["GET"])

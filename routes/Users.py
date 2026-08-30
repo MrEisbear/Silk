@@ -1,4 +1,6 @@
+import os
 from flask import Blueprint, request, jsonify
+import requests
 from core.coreAuthUtil import require_token, get_user_permissions
 from core.database import db_helper
 from core.logger import logger
@@ -33,8 +35,79 @@ def me(data):
             "discord_id": user["discord_id"],
             "avatar": user["avatar_url"],
             "created": user["created_at"],
-            "verified": user["is_verified"]
+            "verified": user["is_verified"],
+            "public_leaderboard": user["public_leaderboard"]
         })
+
+BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+@bp.route("/me/discord-avatar", methods=["POST"])
+@require_token
+def copy_discord_avatar(data):
+    user_id = data["id"]
+    with db_helper.cursor() as cur:
+        cur.execute("SELECT discord_id FROM users WHERE id = %s", (user_id,))
+        user = cast(dict[str, Any], cur.fetchone())
+        if not user:
+            logger.verbose("User not found; 404")
+            return {"success": False, "message": "User not found"}, 404
+        if not user["discord_id"]:
+            logger.verbose("User not linked to discord; 400")
+            return {"success": False, "message": "User not linked to discord"}, 400
+        discord_id: int = cast(int, user["discord_id"])
+        response = requests.get(
+            url=f"https://discord.com/api/v10/users/{discord_id}",
+            headers={
+                "Authorization": f"Bot {BOT_TOKEN}"
+            },
+            timeout=10,
+        )
+        if response.status_code != 200:
+            logger.error(f"Failed to fetch avatar from discord: {response.status_code} {response.text}")
+            return {"success": False, "message": "Failed to fetch avatar"}, 500
+        user_data = response.json()
+        if not user_data.get("avatar"):
+            logger.verbose("User not linked to discord; 400")
+            return {"success": False, "message": "User not linked to discord"}, 400
+        avatar_url = f"https://cdn.discordapp.com/avatars/{discord_id}/{user_data['avatar']}.png"
+        cur.execute("UPDATE users SET avatar_url = %s WHERE id = %s", (avatar_url, user_id))
+        logger.verbose(f"Avatar updated for user {user_id}")
+        return {"success": True, "message": "Avatar updated"}, 200
+
+
+@bp.route("/settings/leaderboard-visibility", methods=["PATCH"])
+@require_token
+def update_leaderboard_visibility(data: dict[str, int | str | bool]):
+    # Extract authenticated user ID
+    user_id: int | None = cast(int | None, data.get("id"))
+    if not user_id:
+        return {"error": "Unauthorized"}, 401
+
+    # Parse incoming JSON payload
+    req_data = request.get_json(silent=True) or {}
+    
+    if "public_leaderboard" not in req_data:
+        return {"error": "Missing 'public_leaderboard' boolean in request body"}, 400
+        
+    # Convert to standard boolean, then to 1/0 for MySQL tinyint
+    is_public = bool(req_data["public_leaderboard"])
+    status_int = 1 if is_public else 0
+
+    with db_helper.cursor() as cur:
+        # Update the user's preference
+        cur.execute("""
+            UPDATE users 
+            SET public_leaderboard = %s 
+            WHERE id = %s
+        """, (status_int, user_id))
+        
+        # Note: Depending on your db_helper implementation, you may need to 
+        # explicitly call a commit method here if it doesn't auto-commit on exit.
+        # e.g., cur.connection.commit()
+        
+    return {
+        "success": True, 
+        "public_leaderboard": is_public
+    }, 200
 
 @bp.route("/me", methods=["PATCH"])
 @require_token
