@@ -1,8 +1,8 @@
 # Core configuration for SilkC system
 # DO NOT CHANGE THIS
 name: SilkCore
-version: 1.4.0-alpha
-frontend_version: 1.4-alpha
+version: 1.5.1-hotfix
+frontend_version: 1.5.1h
 config_version: 2.0-indev
 
 # System-wide settings

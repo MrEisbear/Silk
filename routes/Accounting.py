@@ -15,9 +15,39 @@ def get_user_accounts(data):
     user_id = data["id"]
     logger.verbose(f"Retrieving bank accounts of {user_id}...")
     with db_helper.cursor() as cur:
-        cur.execute("SELECT * FROM bank_accounts WHERE account_holder_id  = %s and account_holder_type = 'user'", (user_id,))
+        cur.execute(
+            """
+            SELECT 
+                id,
+                uuid,
+                account_number,
+                account_holder_type,
+                account_holder_id,
+                balance,
+                custom_account_name,
+                custom_account_name AS account_name,
+                notes,
+                is_frozen,
+                (pin_hash IS NOT NULL) AS has_pin,
+                created_at,
+                updated_at
+            FROM bank_accounts 
+            WHERE account_holder_id = %s 
+              AND account_holder_type = 'user' 
+              AND is_deleted = 0
+            """,
+            (user_id,)
+        )
         rows = cur.fetchall()
-        # The cursor already returns dict-like rows, so `dict(row)` is not needed.
+        for row in rows:
+            if row.get("created_at") and hasattr(row["created_at"], "isoformat"):
+                row["created_at"] = row["created_at"].isoformat()
+            if row.get("updated_at") and hasattr(row["updated_at"], "isoformat"):
+                row["updated_at"] = row["updated_at"].isoformat()
+            if "is_frozen" in row:
+                row["is_frozen"] = bool(row["is_frozen"])
+            if "has_pin" in row:
+                row["has_pin"] = bool(row["has_pin"])
         return jsonify({"accounts": rows})
 
 @bp.route("/accounts", methods=["POST"])
@@ -51,22 +81,21 @@ def create_user_accounts(data):
         if row:
             logger.error(f"Failed to create Bank Account for {user_id}. attempted accnum = {accnum}")
             return jsonify({"error": "Failed to create bank account"}), 500
+        first_account = False
         try:
-            cur.execute("SELECT COUNT(*) as count FROM bank_accounts WHERE account_holder_id = %s AND account_holder_type = 'user'", (user_id,))
+            cur.execute("SELECT COUNT(*) as count FROM bank_accounts WHERE account_holder_id = %s AND account_holder_type = 'user' AND is_deleted = 0", (user_id,))
             result = cur.fetchone()
-            if result and int(cast(dict[str, int], result)["count"]) >= 3:
+            count = int(cast(dict[str, int], result)["count"]) if result else 0
+            if count >= 5:
                 return {"error": "Maximum account limit reached, contact support to create additional accounts."}, 400
-            if result and int(cast(dict[str, int], result)["count"]) == 0:
+            if count == 0:
                 first_account = True
             
             cur.execute("INSERT INTO bank_accounts (account_number, account_holder_type, account_holder_id) VALUES (%s, %s, %s)", (accnum, 'user', user_id,))
         except Exception as e:
             logger.error(str(e))
             return jsonify({"error": "Failed to create bank account"}), 500
-        cur.execute("SELECT COUNT(*) as total FROM bank_accounts WHERE account_holder_id = %s AND account_holder_type = 'user'", (user_id,))
-        result = cur.fetchone()
         
-        # 2. Access the value via the string key
         if first_account:
             start_money = 7500
             cur.execute(
@@ -84,21 +113,48 @@ def retrieve_acc_details(data, account_uuid):
     account_uuid = str(account_uuid)
     logger.verbose(f"Retrieving bank account {account_uuid}...")
     with db_helper.cursor() as cur:
-        cur.execute("SELECT * FROM bank_accounts WHERE uuid = %s", (account_uuid,))
+        cur.execute(
+            """
+            SELECT 
+                id,
+                uuid,
+                account_number,
+                account_holder_type,
+                account_holder_id,
+                balance,
+                custom_account_name,
+                custom_account_name AS account_name,
+                notes,
+                is_frozen,
+                (pin_hash IS NOT NULL) AS has_pin,
+                created_at,
+                updated_at
+            FROM bank_accounts 
+            WHERE uuid = %s AND is_deleted = 0
+            """,
+            (account_uuid,)
+        )
         row = cur.fetchone()
         if not row:
             return jsonify({"error": "Account not found"}), 404
         account = cast(dict[str, Any], row)
-        if int(account["account_holder_id"]) != user_id:
+        if int(account["account_holder_id"]) != int(user_id):
             return jsonify({"error": "Account not found"}), 404
         return jsonify({
-            "balance": account["balance"],
-            "account_number": account["account_number"],
             "id": account["id"],
-            "created_at": account["created_at"].isoformat() if account["created_at"] else None,
-            "updated_at": account["updated_at"].isoformat() if account["updated_at"] else None,
-            "is_frozen": account["is_frozen"]
-            })
+            "uuid": account["uuid"],
+            "account_number": account["account_number"],
+            "account_name": account["custom_account_name"],
+            "custom_account_name": account["custom_account_name"],
+            "notes": account["notes"],
+            "balance": account["balance"],
+            "is_frozen": bool(account["is_frozen"]),
+            "has_pin": bool(account["has_pin"]),
+            "account_holder_type": account["account_holder_type"],
+            "account_holder_id": account["account_holder_id"],
+            "created_at": account["created_at"].isoformat() if account["created_at"] and hasattr(account["created_at"], "isoformat") else account["created_at"],
+            "updated_at": account["updated_at"].isoformat() if account["updated_at"] and hasattr(account["updated_at"], "isoformat") else account["updated_at"],
+        })
 
 @bp.route("/accounts/<uuid:account_uuid>", methods=["PATCH"])
 @require_token
@@ -106,42 +162,76 @@ def update_acc_details(data, account_uuid):
     user_id = data["id"]
     account_uuid = str(account_uuid)
     req = request.get_json()
-    freeze = req.get("is_frozen")
-    if freeze:
-        if freeze is not isinstance(freeze, bool):
-            return jsonify({"error": "Invalid JSON"}), 400
-        logger.verbose(f"Updating bank account {account_uuid}...")
-        with db_helper.cursor() as cur:
-            cur.execute("SELECT * FROM bank_accounts WHERE uuid = %s", (account_uuid,))
-            row = cur.fetchone()
-            if not row:
-                return jsonify({"error": "Account not found"}), 404
-            account = cast(dict[str, Any], row)
-            if account["account_holder_id"] != user_id:
-                return jsonify({"error": "Account not found"}), 404
-            cur.execute("UPDATE bank_accounts SET is_frozen = %s WHERE uuid = %s", (freeze, account_uuid))
-        return jsonify({"success": True, "message": "Account updated"})
-    pin = str(req.get("pin"))
-    if len(pin) not in [4, 5, 6]:
+    if not req:
         return jsonify({"error": "Invalid JSON"}), 400
-    pin = hash_pin(pin, account_uuid)
-    if pin:
-        logger.verbose(f"Updating Pin for account {account_uuid}...")
-        with db_helper.cursor() as cur:
-            cur.execute("SELECT * FROM bank_accounts WHERE uuid = %s", (account_uuid,))
-            row = cur.fetchone()
-            if not row:
-                return jsonify({"error": "Account not found"}), 404
-            account = cast(dict[str, Any], row)
-            if int(account["account_holder_id"]) != int(user_id):
-                return jsonify({"error": "Account not found"}), 404
+
+    # --- Validate all fields up-front before touching the DB ---
+    updates: dict[str, Any] = {}
+
+    if "is_frozen" in req:
+        freeze = req["is_frozen"]
+        if not isinstance(freeze, bool):
+            return jsonify({"error": "is_frozen must be a boolean"}), 400
+        updates["is_frozen"] = freeze
+
+    if "pin" in req:
+        pin = str(req["pin"])
+        if len(pin) not in [4, 5, 6]:
+            return jsonify({"error": "Pin must be 4-6 digits"}), 400
+        updates["pin"] = pin          # hashed after ownership check
+
+    if "account_name" in req or "custom_account_name" in req:
+        account_name = req.get("account_name") if "account_name" in req else req.get("custom_account_name")
+        if account_name is False or account_name is None or account_name == "" or (isinstance(account_name, str) and account_name.strip().lower() == "false"):
+            updates["custom_account_name"] = None
+        elif isinstance(account_name, str):
+            if len(account_name) > 36:
+                return jsonify({"error": "account_name must be at most 36 characters"}), 400
+            updates["custom_account_name"] = account_name
+        else:
+            return jsonify({"error": "account_name must be a string, null, or false"}), 400
+
+    if "notes" in req:
+        notes = req["notes"]
+        if notes is False or notes is None or notes == "" or (isinstance(notes, str) and notes.strip().lower() == "false"):
+            updates["notes"] = None
+        elif isinstance(notes, str):
+            updates["notes"] = notes
+        else:
+            return jsonify({"error": "notes must be a string, null, or false"}), 400
+
+    if not updates:
+        return jsonify({"error": "No valid fields to update"}), 400
+
+    # --- Single DB round-trip for lookup + ownership ---
+    logger.verbose(f"Updating bank account {account_uuid}...")
+    with db_helper.cursor() as cur:
+        cur.execute(
+            "SELECT id, account_holder_id, account_holder_type FROM bank_accounts WHERE uuid = %s AND is_deleted = 0",
+            (account_uuid,)
+        )
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": "Account not found"}), 404
+        account = cast(dict[str, Any], row)
+        if int(account["account_holder_id"]) != int(user_id):
+            return jsonify({"error": "Account not found"}), 404
+
+        # Pin change is only allowed for personal accounts
+        if "pin" in updates:
             if str(account["account_holder_type"]) != "user":
                 logger.verbose("Invalid Account Type. Non Personal Account attempting Pin Change")
                 return jsonify({"error": "Account not found"}), 404
-            cur.execute("UPDATE bank_accounts SET pin_hash = %s WHERE uuid = %s", (pin, account_uuid))
-        return jsonify({"success": True, "message": "Account updated"})
-    else:
-        return jsonify({"error": "Invalid JSON"}), 400
+            hashed = hash_pin(updates.pop("pin"), account_uuid)
+            if hashed:
+                updates["pin_hash"] = hashed
+
+        # Build a single UPDATE statement
+        set_clauses = ", ".join(f"{col} = %s" for col in updates)
+        values = list(updates.values()) + [account_uuid]
+        cur.execute(f"UPDATE bank_accounts SET {set_clauses} WHERE uuid = %s", values)
+
+    return jsonify({"success": True, "message": "Account updated"})
 
 # Public Acc lookup
 @bp.route("/public/<uuid:account_uuid>", methods=["GET"])

@@ -7,6 +7,8 @@ CREATE TABLE `bank_accounts` (
   `account_holder_type` enum('user','company','gov') NOT NULL,
   `account_holder_id` varchar(36) NOT NULL,
   `balance` decimal(19,3) NOT NULL DEFAULT 0.000,
+  `custom_account_name` varchar(36) DEFAULT NULL,
+  `notes` text DEFAULT NULL,
   `created_at` datetime DEFAULT current_timestamp(),
   `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `is_frozen` tinyint(1) NOT NULL DEFAULT 0,

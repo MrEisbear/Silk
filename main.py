@@ -53,7 +53,8 @@ register_blueprints(app)
 from core.limiter import init_limiter
 init_limiter(app)
 
+app.teardown_appcontext(db_helper.close_db)
+
 logger.info("App started!")
 if __name__ == "__main__":
-    app.teardown_appcontext(db_helper.close_db)
     app.run(host="0.0.0.0", port=1236, debug=True, use_reloader=False)

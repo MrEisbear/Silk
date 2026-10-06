@@ -3,6 +3,7 @@ from core.database import db_helper
 from typing import Any, cast
 from datetime import datetime
 import simplejson as json
+import re
 
 bp = Blueprint("v2_transaction", __name__, url_prefix="/api/v2/")
 
@@ -13,7 +14,12 @@ def get_transaction(transaction_id: int):
         sql = """
             SELECT 
                 t.id, t.uuid, t.transaction_type, t.amount, t.tax_category, 
-                t.description, t.metadata, t.confirmed, t.created_at,
+                t.description,
+                CASE 
+                    WHEN t.transaction_type = 'giftcard' THEN NULL 
+                    ELSE t.metadata 
+                END as metadata,
+                t.confirmed, t.created_at,
                 from_acc.account_number as sender_acc_num,
                 to_acc.account_number as receiver_acc_num
             FROM transactions t
@@ -53,12 +59,26 @@ def get_transaction(transaction_id: int):
                 tax_transaction_id = str(tax_row["id"])
 
         # Format the transaction_type to match the C# Enum (e.g. 'Transfer', 'Payment')
-        trans_type_db = str(row["transaction_type"])
+        trans_type_db = str(row["transaction_type"]) if row.get("transaction_type") else ""
         trans_type = trans_type_db.capitalize()
             
         metadata_str = row["metadata"]
         if isinstance(metadata_str, bytes):
             metadata_str = metadata_str.decode('utf-8')
+
+        description = row["description"]
+        if trans_type_db.lower() == "giftcard":
+            metadata_str = None
+            if description:
+                if "****-" not in description:
+                    m = re.match(r"^(Code:\s*)(.+)$", description, re.IGNORECASE)
+                    if m:
+                        prefix, code = m.groups()
+                        code = code.strip()
+                        last4 = code[-4:] if len(code) >= 4 else code
+                        description = f"{prefix}****-{last4}"
+                    else:
+                        description = re.sub(r"\b\d{12}(\d{4})\b", r"****-\1", description)
             
         created_at = row["created_at"]
         iso_time = created_at.isoformat() + "Z" if isinstance(created_at, datetime) else None
@@ -73,7 +93,7 @@ def get_transaction(transaction_id: int):
             "SenderBankAccountNumber": row["sender_acc_num"] or "",
             "ReceiverBankAccountNumber": row["receiver_acc_num"] or "",
             "Metadata": metadata_str,
-            "Description": row["description"],
+            "Description": description,
             "TaxCategory": int(row["tax_category"]) if row["tax_category"] is not None else None,
             "TaxAmount": tax_amount,
             "TaxTransactionID": tax_transaction_id,

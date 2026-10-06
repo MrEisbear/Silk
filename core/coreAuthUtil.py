@@ -54,6 +54,13 @@ def create_jwt(user_id: int) -> str:
     }
     return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
+def invalidate_user_auth_cache(user_id: int | str) -> None:
+    """Invalidates the Redis cache for a user (e.g. after ban or role change)."""
+    try:
+        redis_client.delete(f"auth_user:{user_id}")
+    except Exception as e:
+        logger.warning(f"Failed to invalidate user auth cache for {user_id}: {e}")
+
 def require_token(func: Callable[..., Any]) -> Callable[..., Any]:
     from functools import wraps
     import jwt
@@ -85,27 +92,46 @@ def require_token(func: Callable[..., Any]) -> Callable[..., Any]:
             data = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
             user_id = data.get("id", "unknown")
 
-            # Validate against DB (Check Ban Status & Update Role)
-            from core.database import db_helper
-            with db_helper.cursor() as cur:
-                # We check for is_banned AND fetch role/username to optimize downstream calls
-                cur.execute("SELECT id, role, is_banned, username FROM users WHERE id = %s", (user_id,))
-                # Cast to dict because generic stubs don't know about dictionary=True
-                user = cast(dict[str, Any] | None, cur.fetchone())
+            # Fast Redis cache lookup (300s TTL)
+            cache_key = f"auth_user:{user_id}"
+            user: dict[str, Any] | None = None
+            try:
+                cached_data = redis_client.get(cache_key)
+                if cached_data:
+                    user = json.loads(str(cached_data))
+            except Exception as e:
+                logger.warning(f"Redis cache read error: {e}")
 
-                if not user:
-                    logger.verbose(f"Token valid but user {user_id} not found in DB")
-                    return jsonify({"error": "User not found"}), 401
+            # Validate against DB using modern ORM if not in cache
+            if not user:
+                from core.database import db_session
+                from models import User
+                with db_session() as session:
+                    user_obj = session.get(User, user_id)
+                    if not user_obj:
+                        logger.verbose(f"Token valid but user {user_id} not found in DB")
+                        return jsonify({"error": "User not found"}), 401
 
-                if user.get("is_banned"):
-                    logger.warning(f"Banned user {user_id} attempted access")
-                    return jsonify({"error": "Account is banned"}), 403
+                    user = {
+                        "id": user_obj.id,
+                        "uuid": user_obj.uuid,
+                        "role": user_obj.role,
+                        "is_banned": user_obj.is_banned,
+                        "username": user_obj.username,
+                    }
 
-                # Merge DB data into token data for efficient role checking
-                # Token data has 'iat', 'exp'; DB has 'role', 'is_banned', etc.
-                # DB data overrides token data if collision (unlikely except 'id')
-                user_data = dict(data)
-                user_data.update(user) 
+                try:
+                    redis_client.setex(cache_key, 300, json.dumps(user))
+                except Exception as e:
+                    logger.warning(f"Redis cache write error: {e}")
+
+            if user.get("is_banned"):
+                logger.warning(f"Banned user {user_id} attempted access")
+                return jsonify({"error": "Account is banned"}), 403
+
+            # Merge DB/cached data into token data for downstream role checking
+            user_data = dict(data)
+            user_data.update(user)
 
             logger.verbose(f"User {user_id} successfully authenticated from {ip} | UA: {user_agent}")
             return func(user_data, *args, **kwargs)

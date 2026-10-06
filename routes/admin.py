@@ -228,6 +228,9 @@ def delete_user(data, user_id):
         if cur.rowcount == 0:
              return jsonify({"error": "User not found"}), 404
              
+    from core.coreAuthUtil import invalidate_user_auth_cache
+    invalidate_user_auth_cache(user_id)
+
     logger.verbose(f"Admin {admin_id} banned user {user_id}")
     return jsonify({"success": True, "message": "User banned"}), 200
 
