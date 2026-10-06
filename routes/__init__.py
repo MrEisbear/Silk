@@ -1,6 +1,7 @@
 import importlib
 import pkgutil
 from flask import Blueprint, Flask
+from flask_openapi3 import APIBlueprint, OpenAPI
 from core.logger import logger
 
 def register_blueprints(app: Flask) -> None:
@@ -13,7 +14,12 @@ def register_blueprints(app: Flask) -> None:
         module = importlib.import_module(f"{package_name}.{module_name}")
 
         bp = getattr(module, "bp", None)
-        if isinstance(bp, Blueprint):
+        if isinstance(bp, APIBlueprint):
+            if not isinstance(app, OpenAPI):
+                raise TypeError("APIBlueprint routes require a flask-openapi3 OpenAPI app")
+            app.register_api(bp)
+            logger.verbose(f"Registered OpenAPI API blueprint: {module_name}")
+        elif isinstance(bp, Blueprint):
             app.register_blueprint(bp)
             logger.verbose(f"Registered blueprint: {module_name}")
 

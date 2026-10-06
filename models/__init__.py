@@ -8,6 +8,7 @@ from models.permissions import Permission, PermissionGroup, GroupPermission, Use
 from models.tokens import Token
 from models.gift_codes import GiftCode
 from models.companies import Company
+from models.auth import UserSession, ApiKey
 
 __all__ = [
     "Base",
@@ -27,4 +28,6 @@ __all__ = [
     "Token",
     "GiftCode",
     "Company",
+    "UserSession",
+    "ApiKey",
 ]

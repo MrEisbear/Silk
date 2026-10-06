@@ -8,6 +8,10 @@ __pycache__/
 
 # Scripts
 scripts/
+!scripts/
+scripts/*
+!scripts/deploy.sh
+!scripts/migrate_auth_v2.sql
 tests/
 .vscode/
 

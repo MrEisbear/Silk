@@ -1,141 +1,164 @@
-	#!/bin/bash
+#!/usr/bin/env bash
+set -Eeuo pipefail
 
-# Configuration
 APP_USER="silkc_user"
 APP_DIR="/home/SilkC"
 SCREEN_NAME="flask_api"
-# Assuming standard hidden .venv folder. If this path is wrong, the script dies.
-VENV="$APP_DIR/.venv/bin/activate" 
+GUNICORN="$APP_DIR/.venv/bin/gunicorn"
+GUNICORN_CONFIG="$APP_DIR/gunicorn_config.py"
 PORT=1236
 
-# Command to run Gunicorn
-CMD="gunicorn -c $APP_DIR/gunicorn_config.py main:app"
+usage() {
+    echo "Usage: $0 {start|stop|restart|reload|status|console}"
+}
 
-# Helper to check if the screen session exists for the specific user
-check_status() {
-    if sudo -u $APP_USER screen -list | grep -q "$SCREEN_NAME"; then
-        return 0 # Running
-    else
-        return 1 # Not running
+require_runtime() {
+    local command
+    for command in sudo screen pgrep ps; do
+        if ! command -v "$command" >/dev/null 2>&1; then
+            echo "Required command not found: $command" >&2
+            exit 1
+        fi
+    done
+    if [[ ! -x "$GUNICORN" || ! -f "$GUNICORN_CONFIG" ]]; then
+        echo "Gunicorn or its configuration is missing under $APP_DIR." >&2
+        exit 1
     fi
 }
 
-case "$1" in
+master_pid() {
+    local screen_pid pid process_args
+    screen_pid="$(pgrep -u "$APP_USER" -o -f "^SCREEN -dmS ${SCREEN_NAME} " || true)"
+    if [[ -n "$screen_pid" ]]; then
+        while read -r pid; do
+            [[ -n "$pid" ]] || continue
+            process_args="$(ps -p "$pid" -o args= || true)"
+            if [[ "$process_args" == *"$GUNICORN_CONFIG main:app"* ||
+                  "$process_args" == *"gunicorn: master [main:app]"* ]]; then
+                printf '%s\n' "$pid"
+                return 0
+            fi
+        done < <(pgrep -P "$screen_pid" || true)
+    fi
+
+    return 0
+}
+
+screen_exists() {
+    sudo -u "$APP_USER" screen -list 2>/dev/null |
+        grep -Eq "[0-9]+\\.${SCREEN_NAME}([[:space:]]|$)"
+}
+
+stop_screen() {
+    if screen_exists; then
+        sudo -u "$APP_USER" screen -S "$SCREEN_NAME" -X quit
+    fi
+}
+
+start_api() {
+    if [[ -n "$(master_pid)" ]]; then
+        echo "API is already running."
+        return 0
+    fi
+
+    sudo -u "$APP_USER" screen -dmS "$SCREEN_NAME" \
+        bash -c 'cd "$1" && exec "$2" -c "$3" main:app' \
+        _ "$APP_DIR" "$GUNICORN" "$GUNICORN_CONFIG"
+
+    for _ in {1..20}; do
+        if [[ -n "$(master_pid)" ]]; then
+            echo "API started successfully on port $PORT."
+            return 0
+        fi
+        sleep 0.5
+    done
+
+    echo "API failed to start; inspect its output with '$0 console'." >&2
+    stop_screen || true
+    return 1
+}
+
+stop_api() {
+    local pid
+    pid="$(master_pid)"
+    if [[ -z "$pid" ]]; then
+        stop_screen || true
+        echo "API is already stopped."
+        return 0
+    fi
+
+    echo "Stopping Gunicorn master (PID $pid)..."
+    kill -TERM "$pid"
+    for _ in {1..30}; do
+        if ! kill -0 "$pid" 2>/dev/null; then
+            stop_screen || true
+            echo "API stopped."
+            return 0
+        fi
+        sleep 1
+    done
+
+    echo "Gunicorn did not stop in time; requesting immediate shutdown." >&2
+    kill -QUIT "$pid" 2>/dev/null || true
+    for _ in {1..10}; do
+        if ! kill -0 "$pid" 2>/dev/null; then
+            stop_screen || true
+            echo "API stopped."
+            return 0
+        fi
+        sleep 1
+    done
+
+    local worker_pid
+    while read -r worker_pid; do
+        [[ -n "$worker_pid" ]] && kill -KILL "$worker_pid" 2>/dev/null || true
+    done < <(pgrep -P "$pid" || true)
+    kill -KILL "$pid" 2>/dev/null || true
+    stop_screen || true
+    echo "API required forced termination." >&2
+}
+
+require_runtime
+
+case "${1:-}" in
     start)
-        if check_status; then
-            echo "❌ API is already running!"
-        else
-			chown -R $APP_USER:$APP_USER $APP_DIR
-            echo "🚀 Starting API as user '$APP_USER'..."
-            # Start the screen detached
-            sudo -u $APP_USER bash -c "source $VENV && screen -dmS $SCREEN_NAME $CMD"
-            
-            # Wait 2 seconds and verify it didn't crash immediately
-            sleep 2
-            if check_status; then
-                echo "✅ API started successfully on port $PORT."
-            else
-                echo "⚠️ API failed to start. Check logs via 'console' command."
-            fi
-        fi
+        start_api
         ;;
-	stop)
-        echo "🛑 Stopping API..."
-
-        # 1. Attempt Graceful Shutdown of Gunicorn
-        # We find the Master PID belonging to the APP_USER
-        MASTER_PID=$(pgrep -u $APP_USER -o -f 'gunicorn.*main:app')
-
-        if [ -n "$MASTER_PID" ]; then
-            echo "🛑 Sending SIGTERM to master (PID: $MASTER_PID)..."
-            # We use 'kill' directly (as root) instead of 'sudo -u ... kill'
-            kill -TERM $MASTER_PID 2>/dev/null
-        else
-            echo "ℹ️ Gunicorn master not found, checking for stragglers..."
-        fi
-
-        echo -n "⏳ Waiting for workers to finish requests"
-
-        # Wait loop
-        for i in {1..90}; do
-			if [ $i -eq 6 ]; then
-				pkill -TERM -u $APP_USER -f 'gunicorn.*main:app'
-			fi
-			
-			if [ $i -eq 13 ]; then
-				echo -e "\n⚠️ Workers refusing to quit. Sending SIGQUIT (Immediate)..."
-				pkill -QUIT -u $APP_USER -f 'gunicorn.*main:app'
-			fi	
-			
-            if pgrep -u $APP_USER -f 'gunicorn.*main:app' > /dev/null; then
-                echo -n "."
-                sleep 1
-            else
-                echo ""
-                echo "✅ Gunicorn stopped gracefully."
-                break
-            fi
-        done
-
-        # 2. Force Kill if still alive (Nuclear Option)
-        # We check if processes exist and force kill as ROOT
-        if pgrep -u $APP_USER -f 'gunicorn.*main:app' > /dev/null; then
-            echo ""
-            echo "⚠️ Workers still alive. Force killing (SIGKILL)..."
-            pkill -9 -u $APP_USER -f 'gunicorn.*main:app'
-        fi
-
-        # 3. Kill the Screen Session
-        # This ensures the shell wrapper is also gone
-        if sudo -u $APP_USER screen -list | grep -q "$SCREEN_NAME"; then
-            echo "🧹 Cleaning up Screen session..."
-            sudo -u $APP_USER screen -X -S $SCREEN_NAME quit 2>/dev/null
-            # Fallback if 'quit' fails
-            if sudo -u $APP_USER screen -list | grep -q "$SCREEN_NAME"; then
-                 pkill -9 -u $APP_USER -f "SCREEN.*$SCREEN_NAME"
-            fi
-        fi
-        
-        echo "✅ API stopped and screen session terminated."
+    stop)
+        stop_api
         ;;
-        
-    status)
-        if check_status; then
-            echo "✅ Status: ONLINE (Screen '$SCREEN_NAME' is active)"
-            # Show the actual process ID
-            pgrep -u $APP_USER -a -f gunicorn | head -n 1
-        else
-            echo "⚪ Status: OFFLINE"
-        fi
-        ;;
-
-	reload)
-        # THE ZERO-DOWNTIME WAY
-        MASTER_PID=$(pgrep -u $APP_USER -o -f 'gunicorn.*main:app')
-        if [ -n "$MASTER_PID" ]; then
-            echo "♻️  Performing Reload..."
-            kill -HUP $MASTER_PID
-            echo "✅ New workers started. Old workers will drain and exit."
-        else
-            echo "❌ API not found. Try 'start'."
-        fi
-        ;;
-
     restart)
-        # Note: This still causes downtime. Use 'reload' for code updates.
-        $0 stop
-        sleep 2
-        $0 start
+        stop_api
+        start_api
         ;;
-
+    reload)
+        pid="$(master_pid)"
+        if [[ -z "$pid" ]]; then
+            echo "API is not running; use '$0 start'." >&2
+            exit 1
+        fi
+        kill -HUP "$pid"
+        echo "Gunicorn reload signal sent to master PID $pid."
+        ;;
+    status)
+        pid="$(master_pid)"
+        if [[ -n "$pid" ]]; then
+            echo "API is online (Gunicorn master PID $pid, port $PORT)."
+            ps -p "$pid" -o args=
+        else
+            echo "API is offline."
+            exit 1
+        fi
+        ;;
     console)
-        echo "🔌 Attaching to console... (Ctrl+A, D to detach)"
-        # Force a refresh of the screen buffer to ensure you see new logs
-        sudo -u $APP_USER screen -S $SCREEN_NAME -X eval "stuff \014" 
-        sudo -u $APP_USER screen -r $SCREEN_NAME
+        if ! screen_exists; then
+            echo "Screen session '$SCREEN_NAME' is not running." >&2
+            exit 1
+        fi
+        sudo -u "$APP_USER" screen -r "$SCREEN_NAME"
         ;;
-        
     *)
-        echo "Usage: $0 {start|stop|restart|status|console}"
-        exit 1
+        usage >&2
+        exit 2
+        ;;
 esac

@@ -11,7 +11,7 @@ try:
     from ruamel.yaml import YAML
     from core.coreC import Configure
     import dotenv
-    from flask import Flask
+    from flask_openapi3 import Info, OpenAPI
     from werkzeug.middleware.proxy_fix import ProxyFix
 except (ImportError, ModuleNotFoundError) as e:
     logger.fatal(f"Failed to import modules: {e}")
@@ -33,8 +33,26 @@ if env == None:
     env = ".env"
 dotenv.load_dotenv(env)
 from core.database import db_helper
-#Create the flask app and start the database
-app = Flask(__name__)
+# Create the Flask app and OpenAPI documentation.
+app = OpenAPI(
+    __name__,
+    info=Info(title="SilkCore API", version=str(config.get("version", default="1.0.0"))),
+    security_schemes={
+        "BearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+            "description": "Provide a session JWT or a Silk API key beginning with silk_api_.",
+        }
+    },
+    doc_prefix="/docs",
+    doc_url="/openapi.json",
+)
+app.add_url_rule(
+    "/openapi.json",
+    endpoint="openapi_spec_alias",
+    view_func=lambda: app.api_doc,
+)
 add_middleware(app, "945c3c4f-8ddb-4356-a3cf-e7f15c2a4d8d")  # Add middleware
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 # Set CORS
