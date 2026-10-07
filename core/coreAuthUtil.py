@@ -94,22 +94,23 @@ def create_session(user_id: int, ip_address: str | None = None,
     now = Instant.now()
     expires_at = now.add(hours=_SESSION_TTL_HOURS)
 
-    with db_helper.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO user_sessions
-                (id, user_id, expires_at, ip_address, user_agent, device_name)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            """,
-            (
-                session_id,
-                user_id,
-                expires_at.py_datetime(),
-                ip_address,
-                user_agent,
-                device_name,
-            ),
-        )
+    with db_helper.transaction() as conn:
+        with conn.cursor(dictionary=True) as cur:
+            cur.execute(
+                """
+                INSERT INTO user_sessions
+                    (id, user_id, expires_at, ip_address, user_agent, device_name)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    session_id,
+                    user_id,
+                    expires_at.py_datetime(),
+                    ip_address,
+                    user_agent,
+                    device_name,
+                ),
+            )
 
     token = _sign_session_jwt(session_id)
     logger.verbose(f"Session {session_id} created for user {user_id}")

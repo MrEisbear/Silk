@@ -161,21 +161,33 @@ class DataBase:
         """Context manager yielding a dictionary cursor."""
         in_flask = has_app_context()
         conn = self.get_db()
-        cur = conn.cursor(dictionary=True)
+        previous_autocommit = conn.autocommit
+        conn.autocommit = False
+        cur = None
         try:
+            cur = conn.cursor(dictionary=True)
             yield cur
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         finally:
-            cur.close()
-            if not in_flask:
-                conn.close()
+            try:
+                if cur is not None:
+                    cur.close()
+            finally:
+                conn.autocommit = previous_autocommit
+                if not in_flask:
+                    conn.close()
 
     @contextmanager
     def transaction(self) -> Generator[Any, None, None]:
         """Context manager for atomic transactions."""
         in_flask = has_app_context()
         db = self.get_db()
-        db.autocommit = False
+        previous_autocommit = db.autocommit
         try:
+            db.autocommit = False
             db.start_transaction()
             yield db
             db.commit()
@@ -183,6 +195,8 @@ class DataBase:
             db.rollback()
             raise
         finally:
-            db.autocommit = True
-            if not in_flask:
-                db.close()
+            try:
+                db.autocommit = previous_autocommit
+            finally:
+                if not in_flask:
+                    db.close()
